@@ -1,7 +1,7 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import ui, Interaction
-import os, json, random, csv, time, requests
+import os, json, random, csv, time, asyncio
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
@@ -22,6 +22,7 @@ DEBUG_CHANNELS = {
 ########## CONFIG ##########
 DATA_FILE = 'data.json'
 TRIVIA_CSV = 'trivia_sheet.csv'
+TRIVIA_DATA_FILE = 'trivia_data.json'
 TRIVIA_CHANNEL_ID = 1387653760175706172  
 #############################
 
@@ -46,8 +47,13 @@ trivia_list = load_trivia()
 random.shuffle(trivia_list)
 
 # State
+trivia_list = []
+trivia_task = None
+trivia_running = False
 current_q = None
 answerers = {}
+round_started_at = 0
+answered = False
 
 # JSON data helper
 def ensure_data():
@@ -61,6 +67,7 @@ def load_data():
 
 def save_data(d):
     json.dump(d, open(DATA_FILE, 'w'), indent=2)
+    
 def get_footer_info(guild):
     if guild and guild.icon:
         return {"text": guild.name, "icon_url": guild.icon.url}
@@ -323,78 +330,147 @@ async def on_member_join(member):
             view=JoinActionView(member)
         )
         
+### ---------TRIVIA------------ ###
+def load_trivia():
+    global trivia_list
+    trivia_list.clear()
+    with open(TRIVIA_CSV, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            answers = [a.strip().lower() for a in row['answers'].split('|')]
+            trivia_list.append({"q": row['question'], "answers": answers})
+
+def load_trivia_data():
+    if not os.path.exists(TRIVIA_DATA_FILE):
+        with open(TRIVIA_DATA_FILE, 'w') as f:
+            json.dump({}, f)
+    with open(TRIVIA_DATA_FILE, 'r') as f:
+        return json.load(f)
+
+def save_trivia_data(data):
+    with open(TRIVIA_DATA_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+async def trivia_loop(channel):
+    global current_q, answerers, round_started_at, answered, trivia_running
+    data = load_trivia_data()
+
+    while trivia_running:
+        current_q = trivia_list.pop(0)
+        trivia_list.append(current_q)
+        answerers.clear()
+        answered = False
+
+        embed = discord.Embed(
+            title="🌌 Spica's Trivia Challenge",
+            description=f"{current_q['q']}",
+            color=discord.Color.purple()
+        )
+        embed.set_thumbnail(url=THUMBNAIL_URL)
+        embed.set_footer(text="Answer within 4 minutes 30 seconds or the stars move on...")
+        await channel.send(embed=embed)
+
+        round_started_at = time.monotonic()
+        await asyncio.sleep(270)  # 4.5 minutes
+
+        if not answered:
+            await channel.send(embed=discord.Embed(
+                title="⏱️ Time's Up!",
+                description="Nobody got it right... Maybe next time, Dreamers.",
+                color=discord.Color.dark_grey()
+            ))
+            await asyncio.sleep(30)
+            continue
+
+        await asyncio.sleep(5)
+
+        results = sorted(answerers.values(), key=lambda x: x['time'])
+        leaderboard = []
+        for res in results:
+            user_id = str(res['user'].id)
+            if user_id not in data:
+                data[user_id] = 0
+            data[user_id] += res['points']
+            leaderboard.append(f"{res['user'].display_name} — `{res['points']}pt` ({int(res['time'] * 1000)}ms)")
+
+        save_trivia_data(data)
+
+        embed = discord.Embed(
+            title="📜 Round Results",
+            description="\n".join(leaderboard),
+            color=discord.Color.gold()
+        )
+        embed.set_thumbnail(url=THUMBNAIL_URL)
+        await channel.send(embed=embed)
+
+        elapsed = time.monotonic() - round_started_at
+        await asyncio.sleep(max(0, 300 - elapsed))
+
 @bot.command()
-async def start_trivia(ctx):
+async def starttrivia(ctx):
+    global trivia_task, trivia_running
     if ctx.channel.id != TRIVIA_CHANNEL_ID:
         return
-    if not question_loop.is_running():
-        question_loop.start(ctx.channel)
-        await ctx.send("🎉 Trivia has begun! One question every 5 minutes.")
-    else:
-        await ctx.send("Trivia is already underway.")
+    if trivia_running:
+        await ctx.send("Trivia is already running!")
+        return
+    load_trivia()
+    trivia_running = True
+    await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
+    trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
 
 @bot.command()
-async def scores(ctx):
-    data = load_data().get('scores', {})
-    if not data:
-        return await ctx.send("No scores recorded yet.")
-    top = sorted(data.items(), key=lambda i: i[1], reverse=True)[:10]
-    lines = [
-        f"{idx+1}. {bot.get_user(int(uid)).display_name if bot.get_user(int(uid)) else uid} — {pts} pts"
-        for idx, (uid, pts) in enumerate(top)
-    ]
-    await ctx.send("📊 **Trivia Leaderboard**:\n" + "\n".join(lines))
-
-# Trivia loop: ask every 5 minutes
-@tasks.loop(minutes=5.0)
-async def question_loop(channel):
-    global current_q, answerers
-    current_q = trivia_list.pop(0)
-    trivia_list.append(current_q)
-    answerers = {}
-
-    await channel.send(f"🧠 **Trivia Time!**\n{current_q['q']}\nYou have 5 seconds to answer!")
-
-    await discord.utils.sleep_until(datetime.utcnow() + timedelta(seconds=5))
-
-    data = load_data()
-    winners = sorted(answerers.values(), key=lambda x: (-x['pts'], x['time']))
-    results = []
-    for w in winners:
-        uid = str(w['id'])
-        data['scores'].setdefault(uid, 0)
-        data['scores'][uid] += w['pts']
-        results.append(f"{w['name']} — {w['pts']} pts (took {round(w['time']*1000)} ms)")
-    save_data(data)
-
-    if results:
-        await channel.send("🏆 **Round Results:**\n" + "\n".join(results))
-    else:
-        await channel.send("No correct answers this round. Better luck next time!")
-
-# Capture answers
-@bot.event
-async def on_message(msg):
-    await bot.process_commands(msg)
-    global current_q, answerers
-
-    if not current_q or msg.author.bot or msg.channel.id != TRIVIA_CHANNEL_ID:
+async def stoptrivia(ctx):
+    global trivia_task, trivia_running
+    if ctx.channel.id != TRIVIA_CHANNEL_ID:
         return
+    if not trivia_running:
+        await ctx.send("Trivia isn't running.")
+        return
+    trivia_running = False
+    if trivia_task:
+        trivia_task.cancel()
+    await ctx.send("🌌 Trivia session ended. Until next time, Dreamers.")
 
-    content = msg.content.lower()
-    for ans in current_q['answers']:
-        if ans in content:
-            if msg.author.id in answerers:
-                return
-            dt = time.perf_counter() - msg.created_at.timestamp()
-            pts = 2 if not answerers else 1
-            answerers[msg.author.id] = {
-                'id': msg.author.id,
-                'name': msg.author.display_name,
-                'pts': pts,
-                'time': dt
-            }
+@bot.command()
+async def triviatop(ctx):
+    data = load_trivia_data()
+    if not data:
+        await ctx.send("Nobody has scored yet!")
+        return
+    sorted_scores = sorted(data.items(), key=lambda x: x[1], reverse=True)[:5]
+    desc = ""
+    for i, (uid, pts) in enumerate(sorted_scores, start=1):
+        user = await bot.fetch_user(int(uid))
+        desc += f"**{i}.** {user.display_name} — `{pts}` points\n"
+    embed = discord.Embed(
+        title="🌟 Trivia Leaderboard",
+        description=desc,
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=THUMBNAIL_URL)
+    await ctx.send(embed=embed)
+
+@bot.event
+async def on_message(message):
+    await bot.process_commands(message)
+    global current_q, answered, answerers, round_started_at
+    if message.author.bot or message.channel.id != TRIVIA_CHANNEL_ID or not current_q:
+        return
+    content = message.content.lower()
+    if any(ans in content for ans in current_q["answers"]):
+        if message.author.id in answerers:
             return
+        now = time.monotonic()
+        elapsed = now - round_started_at
+        points = 2 if not answered else 1
+        answerers[message.author.id] = {
+            "user": message.author,
+            "points": points,
+            "time": elapsed
+        }
+        if not answered:
+            answered = True
 
 @bot.command()
 async def help(ctx):
