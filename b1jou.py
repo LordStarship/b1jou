@@ -173,7 +173,7 @@ async def pray(ctx, *args):
         embed.title = "A prayer is sent to somebody!"
         embed.description = (
             f"**{ctx.author.display_name}** sends a prayer for **{text_target}**!\n"
-            "Whoever they are, they sure have a lovely friend praying for them even when they're separated!\n\n> {quote}"
+            f"Whoever they are, they sure have a lovely friend praying for them even when they're separated!\n\n> {quote}"
         )
 
     await ctx.send(embed=embed)
@@ -319,6 +319,7 @@ async def on_member_join(member):
         )
         
 ### ---------TRIVIA------------ ###
+
 def load_trivia():
     global trivia_list
     trivia_list.clear()
@@ -328,6 +329,7 @@ def load_trivia():
             answers = [a.strip().lower() for a in row['answers'].split('|')]
             trivia_list.append({"q": row['question'], "answers": answers})
     random.shuffle(trivia_list)
+    print(f"[DEBUG] Loaded {len(trivia_list)} trivia questions.")
 
 def load_trivia_data():
     if not os.path.exists(TRIVIA_DATA_FILE):
@@ -341,6 +343,7 @@ def save_trivia_data(data):
         json.dump(data, f, indent=2)
 
 async def trivia_loop(channel):
+    print("[DEBUG] Entered trivia_loop")
     global current_q, answerers, round_started_at, answered, trivia_running
     data = load_trivia_data()
 
@@ -357,7 +360,9 @@ async def trivia_loop(channel):
         )
         embed.set_thumbnail(url=THUMBNAIL_URL)
         embed.set_footer(text="Answer within 4 minutes 30 seconds or the stars move on...")
+        print(f"[DEBUG] Asking question: {current_q['q']}")
         await channel.send(embed=embed)
+        print("[DEBUG] Sent trivia question, sleeping for 4.5 minutes...")
 
         round_started_at = time.monotonic()
         await asyncio.sleep(270)  # 4.5 minutes
@@ -407,6 +412,7 @@ async def starttrivia(ctx):
     trivia_running = True
     await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
     trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
+    print("[DEBUG] Trivia task started:", trivia_task)
 
 @bot.command()
 async def stoptrivia(ctx):
