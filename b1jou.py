@@ -34,18 +34,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="b!", intents=intents)
 bot.remove_command('help')
 
-# Load CSV questions
-def load_trivia():
-    with open(TRIVIA_CSV, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        return [
-            {'q': row['question'], 'answers': [a.strip().lower() for a in row['answers'].split('|')]}
-            for row in reader
-        ]
-
-trivia_list = load_trivia()
-random.shuffle(trivia_list)
-
 # State
 trivia_list = []
 trivia_task = None
@@ -339,6 +327,7 @@ def load_trivia():
         for row in reader:
             answers = [a.strip().lower() for a in row['answers'].split('|')]
             trivia_list.append({"q": row['question'], "answers": answers})
+    random.shuffle(trivia_list)
 
 def load_trivia_data():
     if not os.path.exists(TRIVIA_DATA_FILE):
