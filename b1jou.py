@@ -21,8 +21,8 @@ DEBUG_CHANNELS = {
 
 ########## CONFIG ##########
 DATA_FILE = 'data.json'
-TRIVIA_CSV = 'trivia.csv'
-TRIVIA_CHANNEL_ID = 1387620244746534994  # Set your trivia channel ID
+TRIVIA_CSV = 'trivia_sheet.csv'
+TRIVIA_CHANNEL_ID = 1387653760175706172  
 #############################
 
 intents = discord.Intents.default()
