@@ -388,7 +388,7 @@ def keep_alive():
 def self_ping():
     while True:
         try:
-            requests.get("https://your-repl-url.repl.co/")
+            requests.get("https://b1jou-discord-bot.onrender.com/")
         except:
             pass
         time.sleep(300)  # Ping every 5 minutes
