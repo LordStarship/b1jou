@@ -1,24 +1,10 @@
 import discord
-from discord.ext import commands
-from discord import app_commands, Interaction, ui
-import os
-import json
-import random
+from discord.ext import commands, tasks
+from discord import ui, Interaction
+import os, json, random, csv, time, requests
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
-import time
-import requests
-import threading
-
-intents = discord.Intents.default()
-intents.guilds = True   
-intents.members = True
-intents.message_content = True
-bot = commands.Bot(command_prefix="b!", intents=intents)
-bot.remove_command('help')
-
-DATA_FILE = 'data.json'
 
 # ✅ Allowed (guild_id, channel_id) pairs
 ALLOWED_CHANNELS = {
@@ -33,25 +19,48 @@ DEBUG_CHANNELS = {
     (715855925285486682, 715855925285486685),
 }
 
-def ensure_data_file():
+########## CONFIG ##########
+DATA_FILE = 'data.json'
+TRIVIA_CSV = 'trivia.csv'
+TRIVIA_CHANNEL_ID = 1387620244746534994  # Set your trivia channel ID
+#############################
+
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="b!", intents=intents)
+bot.remove_command('help')
+
+# Load CSV questions
+def load_trivia():
+    with open(TRIVIA_CSV, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        return [
+            {'q': row['question'], 'answers': [a.strip().lower() for a in row['answers'].split('|')]}
+            for row in reader
+        ]
+
+trivia_list = load_trivia()
+random.shuffle(trivia_list)
+
+# State
+current_q = None
+answerers = {}
+
+# JSON data helper
+def ensure_data():
     if not os.path.exists(DATA_FILE) or os.path.getsize(DATA_FILE) == 0:
         with open(DATA_FILE, 'w') as f:
-            json.dump({'guilds': {}}, f)
+            json.dump({'scores': {}}, f)
 
 def load_data():
-    ensure_data_file()
-    with open(DATA_FILE, 'r') as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            data = {'guilds': {}}
-            save_data(data)
-            return data
+    ensure_data()
+    return json.load(open(DATA_FILE))
 
-def save_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
+def save_data(d):
+    json.dump(d, open(DATA_FILE, 'w'), indent=2)
 def get_footer_info(guild):
     if guild and guild.icon:
         return {"text": guild.name, "icon_url": guild.icon.url}
@@ -127,6 +136,7 @@ async def pray(ctx, *args):
 
     quote = random.choice(PRAYER_QUOTES)
 
+    # 💖 Prayed to the bot itself
     if len(mentions) == 1 and mentions[0].id == bot.user.id:
         embed.title = "A prayer is sent... to me!?"
         embed.description = f"R-really? you would pray for me? thank you!! ///\n\n> {quote}"
@@ -168,7 +178,7 @@ async def pray(ctx, *args):
         embed.title = "A prayer is sent to somebody!"
         embed.description = (
             f"**{ctx.author.display_name}** sends a prayer for **{text_target}**!\n"
-            f"Whoever they are, they sure have a lovely friend praying for them even when they're separated!\n\n> {quote}"
+            "Whoever they are, they sure have a lovely friend praying for them even when they're separated!\n\n> {quote}"
         )
 
     await ctx.send(embed=embed)
@@ -312,6 +322,79 @@ async def on_member_join(member):
             f"{admin_role.mention}, please take action below.",
             view=JoinActionView(member)
         )
+        
+@bot.command()
+async def start_trivia(ctx):
+    if ctx.channel.id != TRIVIA_CHANNEL_ID:
+        return
+    if not question_loop.is_running():
+        question_loop.start(ctx.channel)
+        await ctx.send("🎉 Trivia has begun! One question every 5 minutes.")
+    else:
+        await ctx.send("Trivia is already underway.")
+
+@bot.command()
+async def scores(ctx):
+    data = load_data().get('scores', {})
+    if not data:
+        return await ctx.send("No scores recorded yet.")
+    top = sorted(data.items(), key=lambda i: i[1], reverse=True)[:10]
+    lines = [
+        f"{idx+1}. {bot.get_user(int(uid)).display_name if bot.get_user(int(uid)) else uid} — {pts} pts"
+        for idx, (uid, pts) in enumerate(top)
+    ]
+    await ctx.send("📊 **Trivia Leaderboard**:\n" + "\n".join(lines))
+
+# Trivia loop: ask every 5 minutes
+@tasks.loop(minutes=5.0)
+async def question_loop(channel):
+    global current_q, answerers
+    current_q = trivia_list.pop(0)
+    trivia_list.append(current_q)
+    answerers = {}
+
+    await channel.send(f"🧠 **Trivia Time!**\n{current_q['q']}\nYou have 5 seconds to answer!")
+
+    await discord.utils.sleep_until(datetime.utcnow() + timedelta(seconds=5))
+
+    data = load_data()
+    winners = sorted(answerers.values(), key=lambda x: (-x['pts'], x['time']))
+    results = []
+    for w in winners:
+        uid = str(w['id'])
+        data['scores'].setdefault(uid, 0)
+        data['scores'][uid] += w['pts']
+        results.append(f"{w['name']} — {w['pts']} pts (took {round(w['time']*1000)} ms)")
+    save_data(data)
+
+    if results:
+        await channel.send("🏆 **Round Results:**\n" + "\n".join(results))
+    else:
+        await channel.send("No correct answers this round. Better luck next time!")
+
+# Capture answers
+@bot.event
+async def on_message(msg):
+    await bot.process_commands(msg)
+    global current_q, answerers
+
+    if not current_q or msg.author.bot or msg.channel.id != TRIVIA_CHANNEL_ID:
+        return
+
+    content = msg.content.lower()
+    for ans in current_q['answers']:
+        if ans in content:
+            if msg.author.id in answerers:
+                return
+            dt = time.perf_counter() - msg.created_at.timestamp()
+            pts = 2 if not answerers else 1
+            answerers[msg.author.id] = {
+                'id': msg.author.id,
+                'name': msg.author.display_name,
+                'pts': pts,
+                'time': dt
+            }
+            return
 
 @bot.command()
 async def help(ctx):
@@ -384,17 +467,6 @@ def run_web():
 def keep_alive():
     t = Thread(target=run_web)
     t.start()
-    
-def self_ping():
-    while True:
-        try:
-            requests.get("https://b1jou-discord-bot.onrender.com/")
-        except:
-            pass
-        time.sleep(300)  # Ping every 5 minutes
-
-# Start self-pinging thread
-threading.Thread(target=self_ping).start()
 
 # ⏳ Start webserver
 keep_alive()
