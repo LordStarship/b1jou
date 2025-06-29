@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: prayer-web
+    runtime: python
+    buildCommand: ""
+    startCommand: python web.py
+    plan: free
+    autoDeploy: true
+
+  - type: worker
+    name: prayer-bot
+    runtime: python
+    buildCommand: ""
+    startCommand: python bot.py
+    plan: free
+    autoDeploy: true

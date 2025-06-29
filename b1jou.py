@@ -3,8 +3,6 @@ from discord.ext import commands
 from discord import ui, Interaction
 import os, json, random, csv, time, asyncio
 from datetime import datetime, timedelta
-from flask import Flask
-from threading import Thread
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -516,23 +514,6 @@ async def help(ctx):
     )
 
     await ctx.send(embed=embed)
-
-# 🌐 Flask keep_alive() setup
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is alive!", 200
-
-def run_web():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run_web)
-    t.start()
-
-# ⏳ Start webserver
-keep_alive()
 
 # 🛰️ Start bot
 bot.run(os.environ['TOKEN'])
