@@ -5,6 +5,13 @@ import os, json, random, csv, time, asyncio
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+cred_json = os.environ['FIREBASE_CREDENTIALS_JSON']
+cred = credentials.Certificate(json.loads(cred_json))
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # ✅ Allowed (guild_id, channel_id) pairs
 ALLOWED_CHANNELS = {
@@ -44,17 +51,16 @@ round_started_at = 0
 answered = False
 
 # JSON data helper
-def ensure_data():
-    if not os.path.exists(DATA_FILE) or os.path.getsize(DATA_FILE) == 0:
-        with open(DATA_FILE, 'w') as f:
-            json.dump({'scores': {}}, f)
+async def load_user_data(guild_id, user_id):
+    doc = db.collection('guilds').document(guild_id).collection('users').document(user_id).get()
+    return doc.to_dict() if doc.exists else {"count": 0, "streak": 0, "last_prayed": None}
 
-def load_data():
-    ensure_data()
-    return json.load(open(DATA_FILE))
+async def save_user_data(guild_id, user_id, data):
+    db.collection('guilds').document(guild_id).collection('users').document(user_id).set(data, merge=True)
 
-def save_data(d):
-    json.dump(d, open(DATA_FILE, 'w'), indent=2)
+async def increment_global_prayers(guild_id):
+    ref = db.collection('guilds').document(guild_id)
+    ref.set({"global": firestore.Increment(1)}, merge=True)
     
 def get_footer_info(guild):
     if guild and guild.icon:
@@ -75,32 +81,27 @@ async def pray(ctx, *args):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
         return
 
-    data = load_data()
     guild_id = str(ctx.guild.id) if ctx.guild else "DM"
     user_id = str(ctx.author.id)
     today = datetime.utcnow().date()
 
-    if guild_id not in data['guilds']:
-        data['guilds'][guild_id] = {'global': 0, 'users': {}}
-
-    guild_data = data['guilds'][guild_id]
-    is_new_user = user_id not in guild_data['users']
-    user_data = guild_data['users'].get(user_id, {})
-    user_data.setdefault("count", 0)
-    user_data.setdefault("streak", 1 if is_new_user else 0)
-    user_data.setdefault("last_prayed", None)
+    # Firestore fetch
+    user_data = await load_user_data(guild_id, user_id)
+    guild_ref = db.collection('guilds').document(guild_id)
+    guild_doc = guild_ref.get()
+    guild_data = guild_doc.to_dict() if guild_doc.exists else {"global": 0}
 
     last_prayed_str = user_data.get("last_prayed")
     last_prayed_date = datetime.strptime(last_prayed_str, "%Y-%m-%d").date() if last_prayed_str else None
 
-    continued_streak = False
-    reset_streak = False
     is_first_pray = last_prayed_date is None
     is_spica_pray = len(args) == 0
+    continued_streak = False
+    reset_streak = False
 
     if is_spica_pray:
         if last_prayed_date == today:
-            pass
+            pass  # already prayed today
         elif last_prayed_date == today - timedelta(days=1):
             user_data["streak"] += 1
             continued_streak = True
@@ -112,15 +113,21 @@ async def pray(ctx, *args):
     else:
         user_data["streak"] = user_data.get("streak", 0)
 
-    user_data["count"] += 1
+    user_data["count"] = user_data.get("count", 0) + 1
     user_data["last_prayed"] = str(today)
-    guild_data['global'] += 1
-    guild_data['users'][user_id] = user_data
-    data['guilds'][guild_id] = guild_data
-    save_data(data)
 
+    await save_user_data(guild_id, user_id, user_data)
+    await increment_global_prayers(guild_id)
+    db.collection('guilds').document(guild_id).collection('leaderboard').document(user_id).set({
+        "user_id": user_id,
+        "count": user_data["count"],
+        "streak": user_data["streak"]
+    }, merge=True)
+
+    # Build embed
     streak = user_data["streak"]
     mentions = [m for m in ctx.message.mentions]
+    quote = random.choice(PRAYER_QUOTES)
 
     embed = discord.Embed(color=discord.Color.purple())
     embed.set_author(name="Prayers of the Wishful")
@@ -129,26 +136,18 @@ async def pray(ctx, *args):
     footer_info = get_footer_info(ctx.guild)
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
 
-    quote = random.choice(PRAYER_QUOTES)
-
-    # 💖 Prayed to the bot itself
+    # Responses
     if len(mentions) == 1 and mentions[0].id == bot.user.id:
         embed.title = "A prayer is sent... to me!?"
         embed.description = f"R-really? you would pray for me? thank you!! ///\n\n> {quote}"
-
     elif is_spica_pray:
         embed.title = "A prayer is sent to Spica!"
-        description = (
-            f"**{ctx.author.display_name}** has prayed for **Spica the Dreamer!**\n"
-            f"Her journey towards the throne of Procyon shall succeed!\n"
-        )
+        embed.description = f"**{ctx.author.display_name}** has prayed for **Spica the Dreamer!**\nHer journey toward the throne of Procyon shall succeed!\n"
         if continued_streak:
-            description += f"🔥 **Daily Streak:** `{streak}` days! Keep praying for the Dreamer! 🔥\n"
+            embed.description += f"🔥 **Daily Streak:** `{streak}` days! Keep praying for the Dreamer! 🔥\n"
         elif reset_streak:
-            description += "😢 Your daily streak was broken. Let's start again today!\n"
-        description += f"\n> {quote}"
-        embed.description = description
-
+            embed.description += "😢 Your daily streak was broken. Let's start again today!\n"
+        embed.description += f"\n> {quote}"
     elif mentions:
         if len(mentions) == 1:
             embed.title = f"A prayer is sent to {mentions[0].display_name}!"
@@ -157,24 +156,15 @@ async def pray(ctx, *args):
             embed.title = f"Prayers are sent to {mentions[0].display_name} and {mentions[1].display_name}!"
             embed.description = f"**{ctx.author.display_name}** prays for their friends, **{mentions[0].display_name}** and **{mentions[1].display_name}**! How caring!\n\n> {quote}"
         elif len(mentions) == 3:
-            embed.title = f"Lots of prayers for **{mentions[0].display_name}**, **{mentions[1].display_name}**, and **{mentions[2].display_name}**!\n\n> {quote}"
-            embed.description = (
-                f"Wow! It seems like **{ctx.author.display_name}** has a lot of friends!\n"
-                f"Such a kind soul!\n\n> {quote}"
-            )
+            embed.title = f"Lots of prayers for {mentions[0].display_name}, {mentions[1].display_name}, and {mentions[2].display_name}!"
+            embed.description = f"Wow! It seems like **{ctx.author.display_name}** has a lot of friends!\nSuch a kind soul!\n\n> {quote}"
         else:
             embed.title = "🌌 Prayers are sent to everyone!"
-            embed.description = (
-                f"Lots of prayers are sent to everybody!\n"
-                f"**{ctx.author.display_name}** loves everyone so much they're willing to send many!\n\n> {quote}"
-            )
+            embed.description = f"Lots of prayers are sent to everybody!\n**{ctx.author.display_name}** loves everyone so much they're willing to send many!\n\n> {quote}"
     else:
         text_target = " ".join(args)
         embed.title = "A prayer is sent to somebody!"
-        embed.description = (
-            f"**{ctx.author.display_name}** sends a prayer for **{text_target}**!\n"
-            f"Whoever they are, they sure have a lovely friend praying for them even when they're separated!\n\n> {quote}"
-        )
+        embed.description = f"**{ctx.author.display_name}** sends a prayer for **{text_target}**!\nWhoever they are, they have a lovely friend praying for them!\n\n> {quote}"
 
     await ctx.send(embed=embed)
 
@@ -183,19 +173,19 @@ async def stats(ctx):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
         return
 
-    data = load_data()
     guild_id = str(ctx.guild.id)
     user_id = str(ctx.author.id)
-    guild_data = data["guilds"].get(guild_id, {"global": 0, "users": {}})
-    user_data = guild_data["users"].get(user_id, {"count": 0, "streak": 0})
+    user_data = await load_user_data(guild_id, user_id)
+    guild_doc = db.collection("guilds").document(guild_id).get()
+    guild_data = guild_doc.to_dict() if guild_doc.exists else {"global": 0}
 
     embed = discord.Embed(
         title="📊 Prayer Stats",
         description=(
             f"{ctx.author.mention}, here are your stats:\n\n"
-            f"**Your total prayers:** `{user_data['count']}`\n"
-            f"🔥 **Current streak:** `{user_data['streak']}`\n"
-            f"🌌 **Global prayers:** `{guild_data['global']}`"
+            f"**Your total prayers:** `{user_data.get('count', 0)}`\n"
+            f"🔥 **Current streak:** `{user_data.get('streak', 0)}`\n"
+            f"🌌 **Global prayers:** `{guild_data.get('global', 0)}`"
         ),
         color=discord.Color.gold()
     )
@@ -204,20 +194,22 @@ async def stats(ctx):
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
     await ctx.send(embed=embed)
 
+
 @bot.command()
 async def top(ctx):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
         return
 
-    data = load_data()
     guild_id = str(ctx.guild.id)
-    guild_data = data["guilds"].get(guild_id, {"users": {}})
-    top_users = sorted(guild_data['users'].items(), key=lambda x: x[1]['count'], reverse=True)[:5]
+    lb_ref = db.collection('guilds').document(guild_id).collection('leaderboard')
+    query = lb_ref.order_by('count', direction=firestore.Query.DESCENDING).limit(5)
+    top_docs = query.stream()
 
     desc = ""
-    for i, (uid, stats) in enumerate(top_users, start=1):
-        user = await bot.fetch_user(int(uid))
-        desc += f"**{i}.** {user.name} — `{stats['count']}` prayers (🔥 {stats['streak']}d streak)\n"
+    async for doc in top_docs:
+        data = doc.to_dict()
+        user = await bot.fetch_user(int(data['user_id']))
+        desc += f"**{user.name}** — `{data['count']}` prayers (🔥 {data['streak']}d streak)\n"
 
     embed = discord.Embed(
         title="🏆 Top Prayers",
