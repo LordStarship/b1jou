@@ -206,7 +206,7 @@ async def top(ctx):
     top_docs = query.stream()
 
     desc = ""
-    async for doc in top_docs:
+    for doc in top_docs:
         data = doc.to_dict()
         user = await bot.fetch_user(int(data['user_id']))
         desc += f"**{user.name}** — `{data['count']}` prayers (🔥 {data['streak']}d streak)\n"
