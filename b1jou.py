@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import ui, Interaction
 import os, json, random, csv, time, asyncio
 from datetime import datetime, timedelta
@@ -27,10 +27,15 @@ DEBUG_CHANNELS = {
 }
 
 ########## CONFIG ##########
-DATA_FILE = 'data.json'
-TRIVIA_CSV = 'trivia_sheet.csv'
-TRIVIA_DATA_FILE = 'trivia_data.json'
-TRIVIA_CHANNEL_ID = 1387653760175706172  
+TRIVIA_CSV = 'trivia_sheet.csv'             # trivia question file
+TRIVIA_DATA_FILE = 'trivia_data.json'       # trivia data file
+TRIVIA_CHANNEL_ID = 1387653760175706172     # channel to send trivia
+QUIZ_LENGTH_SEC      = 270                  # 4m 30 s players can answer
+POST_ANSWER_WINDOW   = 5                    # window that stays open after 1st correct
+INTER_ROUND_COOLDOWN = 300                  # total cycle time = 5 min
+PRE_ANNOUNCE_SEC     = 5                    # “Trivia in 5 seconds!” heads‑up
+BACKUP_CHANNEL_ID = 1389077962116038848     # channel to receive backup
+BACKUP_INTERVAL_MINUTES = 60                # backup every 1 hour
 #############################
 
 intents = discord.Intents.default()
@@ -40,15 +45,6 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="b!", intents=intents)
 bot.remove_command('help')
-
-# State
-trivia_list = []
-trivia_task = None
-trivia_running = False
-current_q = None
-answerers = {}
-round_started_at = 0
-answered = False
 
 # JSON data helper
 async def load_user_data(guild_id, user_id):
@@ -76,6 +72,7 @@ PRAYER_QUOTES = [
 THUMBNAIL_URL = "https://cdn.discordapp.com/attachments/1387623832549986325/1387658664185303061/th-913589016.jpeg"
 IMAGE_URL = "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.zerochan.net%2FGeopelia.full.4086266.jpg"
 
+# Pray command
 @bot.command()
 async def pray(ctx, *args):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
@@ -138,10 +135,10 @@ async def pray(ctx, *args):
 
     # Responses
     if len(mentions) == 1 and mentions[0].id == bot.user.id:
-        embed.title = "A prayer is sent... to me!?"
+        embed.title = "⁉️ A prayer is sent... to me!?"
         embed.description = f"R-really? you would pray for me? thank you!! ///\n\n> {quote}"
     elif is_spica_pray:
-        embed.title = "A prayer is sent to Spica!"
+        embed.title = "🙏 A prayer is sent to Spica!"
         embed.description = f"**{ctx.author.display_name}** has prayed for **Spica the Dreamer!**\nHer journey toward the throne of Procyon shall succeed!\n"
         if continued_streak:
             embed.description += f"🔥 **Daily Streak:** `{streak}` days! Keep praying for the Dreamer! 🔥\n"
@@ -150,24 +147,25 @@ async def pray(ctx, *args):
         embed.description += f"\n> {quote}"
     elif mentions:
         if len(mentions) == 1:
-            embed.title = f"A prayer is sent to {mentions[0].display_name}!"
+            embed.title = f"💫 A prayer is sent to {mentions[0].display_name}!"
             embed.description = f"**{ctx.author.display_name}** has prayed for **{mentions[0].display_name}**! How sweet!\n\n> {quote}"
         elif len(mentions) == 2:
-            embed.title = f"Prayers are sent to {mentions[0].display_name} and {mentions[1].display_name}!"
+            embed.title = f"✨ Prayers are sent to {mentions[0].display_name} and {mentions[1].display_name}!"
             embed.description = f"**{ctx.author.display_name}** prays for their friends, **{mentions[0].display_name}** and **{mentions[1].display_name}**! How caring!\n\n> {quote}"
         elif len(mentions) == 3:
-            embed.title = f"Lots of prayers for {mentions[0].display_name}, {mentions[1].display_name}, and {mentions[2].display_name}!"
+            embed.title = f"🌟 Lots of prayers for {mentions[0].display_name}, {mentions[1].display_name}, and {mentions[2].display_name}!"
             embed.description = f"Wow! It seems like **{ctx.author.display_name}** has a lot of friends!\nSuch a kind soul!\n\n> {quote}"
         else:
             embed.title = "🌌 Prayers are sent to everyone!"
             embed.description = f"Lots of prayers are sent to everybody!\n**{ctx.author.display_name}** loves everyone so much they're willing to send many!\n\n> {quote}"
     else:
         text_target = " ".join(args)
-        embed.title = "A prayer is sent to somebody!"
+        embed.title = "⭐ A prayer is sent to somebody!"
         embed.description = f"**{ctx.author.display_name}** sends a prayer for **{text_target}**!\nWhoever they are, they have a lovely friend praying for them!\n\n> {quote}"
 
     await ctx.send(embed=embed)
 
+# b!stats (Shows stats of all prayers)
 @bot.command()
 async def stats(ctx):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
@@ -194,7 +192,7 @@ async def stats(ctx):
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
     await ctx.send(embed=embed)
 
-
+# b!top (Top praying leaderboard)
 @bot.command()
 async def top(ctx):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
@@ -221,6 +219,7 @@ async def top(ctx):
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
     await ctx.send(embed=embed)
 
+# PING COMMMAND
 @bot.command()
 async def jou(ctx):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in DEBUG_CHANNELS:
@@ -231,6 +230,7 @@ async def jou(ctx):
     ping = (time.monotonic() - before) * 1000
     await msg.edit(content=f"🏓 Pong! Latency: `{int(ping)}ms`")
 
+# Member Joined Action
 welcome_messages = {}
 class JoinActionView(ui.View):
     def __init__(self, member):
@@ -264,6 +264,22 @@ class JoinActionView(ui.View):
             await self.disable_buttons(interaction)
         except discord.Forbidden:
             await interaction.response.send_message("I lack permission to assign the role.", ephemeral=True)
+            
+    @ui.button(label="Assign Bot Role", style=discord.ButtonStyle.success)
+    async def assign_role(self, interaction: Interaction, button: ui.Button):
+        role = interaction.guild.get_role(1387624066801733643)
+        if not role:
+            await interaction.response.send_message("Role not found.", ephemeral=True)
+            return
+        if role in self.member.roles:
+            await interaction.response.send_message("They already have the role!", ephemeral=True)
+            return
+        try:
+            await self.member.add_roles(role, reason="Granted by bot")
+            await interaction.response.send_message(f"✨ {interaction.user.mention} assigned role to **{self.member.display_name}**.")
+            await self.disable_buttons(interaction)
+        except discord.Forbidden:
+            await interaction.response.send_message("I lack permission to assign the role.", ephemeral=True)
 
     @ui.button(label="Kick", style=discord.ButtonStyle.danger)
     async def kick_user(self, interaction: Interaction, button: ui.Button):
@@ -283,6 +299,7 @@ class JoinActionView(ui.View):
         except discord.Forbidden:
             await interaction.response.send_message("I cannot ban this user.", ephemeral=True)
 
+# Automatic Message in both Admin and Welcome channel when User Joiened
 @bot.event
 async def on_member_join(member):
     if member.guild.id != 1386929798831538248:
@@ -310,7 +327,19 @@ async def on_member_join(member):
             view=JoinActionView(member)
         )
         
-### ---------TRIVIA------------ ###
+# Trivia
+trivia_list = []
+trivia_task = None
+trivia_running = False
+current_q = None
+answerers = {}
+round_started_at = 0
+answered = False
+
+async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
+    overwrites = chan.overwrites_for(chan.guild.default_role)
+    overwrites.send_messages = allow_send
+    await chan.set_permissions(chan.guild.default_role, overwrite=overwrites)
 
 def load_trivia():
     global trivia_list
@@ -334,68 +363,90 @@ def save_trivia_data(data):
     with open(TRIVIA_DATA_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
-async def trivia_loop(channel):
-    print("[DEBUG] Entered trivia_loop")
+async def trivia_loop(channel: discord.TextChannel):
     global current_q, answerers, round_started_at, answered, trivia_running
     data = load_trivia_data()
 
-    while trivia_running:
-        current_q = trivia_list.pop(0)
-        trivia_list.append(current_q)
-        answerers.clear()
-        answered = False
+    try:
+        while trivia_running:
+            # 1) pick & announce a question  ────────────────────────────────
+            current_q = trivia_list.pop(0)
+            trivia_list.append(current_q)
+            answerers.clear()
+            answered = False
 
-        embed = discord.Embed(
-            title="🌌 Spica's Trivia Challenge",
-            description=f"{current_q['q']}",
-            color=discord.Color.purple()
-        )
-        embed.set_thumbnail(url=THUMBNAIL_URL)
-        embed.set_footer(text="Answer within 4 minutes 30 seconds or the stars move on...")
-        print(f"[DEBUG] Asking question: {current_q['q']}")
-        await channel.send(embed=embed)
-        print("[DEBUG] Sent trivia question, sleeping for 4.5 minutes...")
+            # open the channel for answers
+            await _lock_channel(channel, allow_send=True)
 
-        round_started_at = time.monotonic()
-        await asyncio.sleep(270)  # 4.5 minutes
+            embed = discord.Embed(
+                title="🌌 Spica's Trivia Challenge",
+                description=current_q["q"],
+                color=discord.Color.purple()
+            ).set_thumbnail(url=THUMBNAIL_URL
+            ).set_footer(text="You have 4 min 30 s — first correct gets 2 pts, everyone else 1 pt!")
 
-        if not answered:
-            await channel.send(embed=discord.Embed(
-                title="⏱️ Time's Up!",
-                description="Nobody got it right... Maybe next time, Dreamers.",
-                color=discord.Color.dark_grey()
-            ))
-            await asyncio.sleep(30)
-            continue
+            await channel.send(embed=embed)
 
-        await asyncio.sleep(5)
+            round_started_at = time.monotonic()
 
-        results = sorted(answerers.values(), key=lambda x: x['time'])
-        leaderboard = []
-        for res in results:
-            user_id = str(res['user'].id)
-            if user_id not in data:
-                data[user_id] = 0
-            data[user_id] += res['points']
-            leaderboard.append(f"{res['user'].display_name} — `{res['points']}pt` ({int(res['time'] * 1000)}ms)")
+            # 2) wait until either window expires or no correct answer came  ─
+            await asyncio.sleep(QUIZ_LENGTH_SEC)
 
-        save_trivia_data(data)
+            # if nobody answered correctly, announce & skip scoring
+            if not answered:
+                await channel.send(
+                    embed=discord.Embed(
+                        title="⏱️ Time’s Up!",
+                        description="Nobody got it right… maybe next time, Dreamers.",
+                        color=discord.Color.dark_grey()
+                    )
+                )
+            else:
+                # keep channel open POST_ANSWER_WINDOW secs after 1st correct
+                await asyncio.sleep(POST_ANSWER_WINDOW)
 
-        embed = discord.Embed(
-            title="📜 Round Results",
-            description="\n".join(leaderboard),
-            color=discord.Color.gold()
-        )
-        embed.set_thumbnail(url=THUMBNAIL_URL)
-        await channel.send(embed=embed)
+                # compile & store results
+                results = sorted(answerers.values(), key=lambda r: r['time'])
+                leaderboard_lines = []
+                for res in results:
+                    uid = str(res['user'].id)
+                    data[uid] = data.get(uid, 0) + res['points']
+                    leaderboard_lines.append(
+                        f"{res['user'].display_name} — `{res['points']} pt` ({int(res['time']*1000)} ms)"
+                    )
+                save_trivia_data(data)
 
-        elapsed = time.monotonic() - round_started_at
-        await asyncio.sleep(max(0, 300 - elapsed))
+                await channel.send(
+                    embed=discord.Embed(
+                        title="📜 Round Results",
+                        description="\n".join(leaderboard_lines),
+                        color=discord.Color.gold()
+                    ).set_thumbnail(url=THUMBNAIL_URL)
+                )
 
+            # 3) lock channel & wait until next round ───────────────────────
+            await _lock_channel(channel, allow_send=False)
+
+            # announce upcoming round 5 s before restart
+            elapsed = time.monotonic() - round_started_at
+            wait_remaining = max(0, INTER_ROUND_COOLDOWN - elapsed - PRE_ANNOUNCE_SEC)
+            await asyncio.sleep(wait_remaining)
+
+            await channel.send("✨ Trivia resumes in **5 seconds**…")
+            await asyncio.sleep(PRE_ANNOUNCE_SEC)
+
+    finally:
+        # make sure the channel is re‑opened if loop is cancelled
+        await _lock_channel(channel, allow_send=True)
+        trivia_running = False
+        current_q = None
+
+
+# ── start / stop / top commands (tiny changes) ───────────────────────────────
 @bot.command()
 async def starttrivia(ctx):
     global trivia_task, trivia_running
-    if ctx.channel.id != TRIVIA_CHANNEL_ID:
+    if ctx.channel.id != TRIVIA_CHANNEL_ID:  # hard‑coded channel guard
         return
     if trivia_running:
         await ctx.send("Trivia is already running!")
@@ -404,7 +455,6 @@ async def starttrivia(ctx):
     trivia_running = True
     await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
     trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
-    print("[DEBUG] Trivia task started:", trivia_task)
 
 @bot.command()
 async def stoptrivia(ctx):
@@ -412,11 +462,10 @@ async def stoptrivia(ctx):
     if ctx.channel.id != TRIVIA_CHANNEL_ID:
         return
     if not trivia_running:
-        await ctx.send("Trivia isn't running.")
+        await ctx.send("Trivia isn’t running.")
         return
     trivia_running = False
-    if trivia_task:
-        trivia_task.cancel()
+    trivia_task.cancel()
     await ctx.send("🌌 Trivia session ended. Until next time, Dreamers.")
 
 @bot.command()
@@ -425,40 +474,79 @@ async def triviatop(ctx):
     if not data:
         await ctx.send("Nobody has scored yet!")
         return
-    sorted_scores = sorted(data.items(), key=lambda x: x[1], reverse=True)[:5]
-    desc = ""
-    for i, (uid, pts) in enumerate(sorted_scores, start=1):
+    top = sorted(data.items(), key=lambda x: x[1], reverse=True)[:5]
+    lines = []
+    for i, (uid, pts) in enumerate(top, 1):
         user = await bot.fetch_user(int(uid))
-        desc += f"**{i}.** {user.display_name} — `{pts}` points\n"
+        lines.append(f"**{i}.** {user.display_name} — `{pts}` pts")
     embed = discord.Embed(
         title="🌟 Trivia Leaderboard",
-        description=desc,
+        description="\n".join(lines),
         color=discord.Color.blue()
-    )
-    embed.set_thumbnail(url=THUMBNAIL_URL)
+    ).set_thumbnail(url=THUMBNAIL_URL)
     await ctx.send(embed=embed)
 
+
+# ── answer listener (only small tweak: we stop accepting answers once channel locked) ──
 @bot.event
-async def on_message(message):
+async def on_message(message: discord.Message):
     await bot.process_commands(message)
-    global current_q, answered, answerers, round_started_at
-    if message.author.bot or message.channel.id != TRIVIA_CHANNEL_ID or not current_q:
+
+    if (
+        message.channel.id != TRIVIA_CHANNEL_ID
+        or message.author.bot
+        or current_q is None
+        # channel locked → send_messages=False for @everyone, ignore late DMs/etc.
+        or not message.channel.permissions_for(message.author).send_messages
+    ):
         return
-    content = message.content.lower()
-    if any(ans in content for ans in current_q["answers"]):
+
+    content = message.content.lower().strip()
+    if any(ans == content for ans in current_q["answers"]):
         if message.author.id in answerers:
-            return
-        now = time.monotonic()
-        elapsed = now - round_started_at
-        points = 2 if not answered else 1
+            return  # already counted
+        timestamp = time.monotonic()
         answerers[message.author.id] = {
             "user": message.author,
-            "points": points,
-            "time": elapsed
+            "points": 2 if not answered else 1,
+            "time": timestamp - round_started_at
         }
+        global answered
         if not answered:
             answered = True
 
+# Backup Trivia Data 
+@tasks.loop(minutes=BACKUP_INTERVAL_MINUTES)
+async def backup_trivia_data():
+    try:
+        with open(TRIVIA_DATA_FILE, "rb") as f:
+            content = f.read()
+            if not content:
+                print("[BACKUP] trivia_data.json is empty, skipping.")
+                return
+
+        filename = f"trivia_data_backup_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}.json"
+        channel = bot.get_channel(BACKUP_CHANNEL_ID)
+        if not channel:
+            print("[BACKUP] Backup channel not found.")
+            return
+
+        file = discord.File(fp=TRIVIA_DATA_FILE, filename=filename)
+        await channel.send(
+            content=f"🗂️ **Backup at UTC {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}**",
+            file=file
+        )
+        print(f"[BACKUP] Sent backup: {filename}")
+
+    except Exception as e:
+        print(f"[BACKUP] Failed to send backup: {e}")
+
+@bot.event
+async def on_ready():
+    print(f"[BOT] Logged in as {bot.user}")
+    backup_trivia_data.start()
+
+# Help Command
 @bot.command()
 async def help(ctx):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
