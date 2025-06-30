@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import ui, Interaction
-import os, json, random, csv, time, asyncio
+import os, json, random, csv, time, asyncio, pathlib
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
@@ -344,25 +344,35 @@ async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
 def load_trivia():
     global trivia_list
     trivia_list.clear()
-    with open(TRIVIA_CSV, newline='', encoding='utf-8') as f:
+    path = pathlib.Path(TRIVIA_CSV)
+    if not path.exists():
+        raise FileNotFoundError(f"CSV not found: {path.resolve()}")
+    with path.open(newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            answers = [a.strip().lower() for a in row['answers'].split('|')]
-            trivia_list.append({"q": row['question'], "answers": answers})
+            answers = [a.strip().lower() for a in row['answers'].split('|') if a.strip()]
+            if row['question'] and answers:
+                trivia_list.append({"q": row['question'], "answers": answers})
+    if not trivia_list:
+        raise RuntimeError("No trivia questions were loaded – check your CSV.")
     random.shuffle(trivia_list)
     print(f"[DEBUG] Loaded {len(trivia_list)} trivia questions.")
 
 def load_trivia_data():
-    if not os.path.exists(TRIVIA_DATA_FILE):
-        with open(TRIVIA_DATA_FILE, 'w') as f:
-            json.dump({}, f)
-    with open(TRIVIA_DATA_FILE, 'r') as f:
-        return json.load(f)
+    path = pathlib.Path(TRIVIA_DATA_FILE)
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        print("[TRIVIA] Corrupted JSON – starting with empty data.")
+        return {}
 
 def save_trivia_data(data):
-    with open(TRIVIA_DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
+    tmp = pathlib.Path(TRIVIA_DATA_FILE + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    tmp.replace(TRIVIA_DATA_FILE)
+    
 async def trivia_loop(channel: discord.TextChannel):
     global current_q, answerers, round_started_at, answered, trivia_running
     data = load_trivia_data()
@@ -474,16 +484,17 @@ async def triviatop(ctx):
     if not data:
         await ctx.send("Nobody has scored yet!")
         return
-    top = sorted(data.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    top5 = sorted(data.items(), key=lambda t: t[1], reverse=True)[:5]
     lines = []
-    for i, (uid, pts) in enumerate(top, 1):
+    for i, (uid, pts) in enumerate(top5, 1):
         user = await bot.fetch_user(int(uid))
         lines.append(f"**{i}.** {user.display_name} — `{pts}` pts")
-    embed = discord.Embed(
-        title="🌟 Trivia Leaderboard",
-        description="\n".join(lines),
-        color=discord.Color.blue()
-    ).set_thumbnail(url=THUMBNAIL_URL)
+
+    embed = (discord.Embed(title="🌟 Trivia Leaderboard",
+                           description="\n".join(lines),
+                           color=discord.Color.blue())
+             .set_thumbnail(url=THUMBNAIL_URL))
     await ctx.send(embed=embed)
 
 
