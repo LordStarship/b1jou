@@ -397,9 +397,8 @@ async def trivia_loop(channel: discord.TextChannel):
                                    description=current_q["q"],
                                    color=discord.Color.purple())
                      .set_thumbnail(url=THUMBNAIL_URL))
-            await channel.send(embed=embed)
-
-            round_started_at = (discord.utils.time_snowflake(discord.utils.utcnow()) >> 22) + DISCORD_EPOCH
+            question_msg = await channel.send(embed=embed)
+            round_started_ms = ((question_msg.id >> 22) + DISCORD_EPOCH)
 
             # wait for first correct OR timeout
             try:
@@ -435,15 +434,15 @@ async def trivia_loop(channel: discord.TextChannel):
 
             # lock & wait for next round
             await _lock_channel(channel, allow_send=False)
-            
+
             # Calculate how much time has passed since round started (Snowflake)
             now_ms = int(discord.utils.utcnow().timestamp() * 1000)
             elapsed_ms = now_ms - round_started_at
-            
+
             remaining_cooldown_ms = (INTER_ROUND_COOLDOWN * 1000) - elapsed_ms - (PRE_ANNOUNCE_SEC * 1000)
             if remaining_cooldown_ms > 0:
                 await asyncio.sleep(remaining_cooldown_ms / 1000)
-            
+
             await channel.send("✨ Trivia resumes in **5 seconds**…")
             await asyncio.sleep(PRE_ANNOUNCE_SEC)
 
@@ -467,12 +466,12 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             first_correct_event.clear()
 
             embed = (discord.Embed(title=f"Spica's Fast Trivia #{questions_asked+1}",
-                                   description=current_q["q"],
-                                   color=discord.Color.teal())
-                     .set_thumbnail(url=THUMBNAIL_URL))
+                    description=current_q["q"],
+                    color=discord.Color.teal())
+                    .set_thumbnail(url=THUMBNAIL_URL))
 
-            await channel.send(embed=embed)
-            round_started_at = (discord.utils.time_snowflake(discord.utils.utcnow()) >> 22) + DISCORD_EPOCH
+            question_msg = await channel.send(embed=embed)
+            round_started_ms = ((question_msg.id >> 22) + DISCORD_EPOCH)
 
             try:
                 await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC)
