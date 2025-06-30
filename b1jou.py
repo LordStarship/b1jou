@@ -327,158 +327,142 @@ async def on_member_join(member):
             view=JoinActionView(member)
         )
         
-# Trivia
-trivia_list = []
-trivia_task = None
+# ════════════════════════════════════════
+#  TRIVIA ENGINE
+# ════════════════════════════════════════
+trivia_list: list[dict] = []
+trivia_task: asyncio.Task | None = None
 trivia_running = False
-current_q = None
-answerers = {}
-round_started_at = 0
+current_q: dict | None = None
+answerers: dict = {}
+round_started_at = 0.0
 answered = False
+first_correct_event = asyncio.Event()     # << new
 
+# ---- channel lock / unlock ----------------------------------------
 async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
-    overwrites = chan.overwrites_for(chan.guild.default_role)
-    overwrites.send_messages = allow_send
-    await chan.set_permissions(chan.guild.default_role, overwrite=overwrites)
+    ow = chan.overwrites_for(chan.guild.default_role)
+    ow.send_messages = allow_send
+    await chan.set_permissions(chan.guild.default_role, overwrite=ow)
 
+# ---- trivia helpers -----------------------------------------------
 def load_trivia():
-    global trivia_list
     trivia_list.clear()
     path = pathlib.Path(TRIVIA_CSV)
     if not path.exists():
         raise FileNotFoundError(f"CSV not found: {path.resolve()}")
     with path.open(newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            answers = [a.strip().lower() for a in row['answers'].split('|') if a.strip()]
-            if row['question'] and answers:
-                trivia_list.append({"q": row['question'], "answers": answers})
+        for row in csv.DictReader(f):
+            q = row.get("question", "").strip()
+            a = [x.strip().lower() for x in row.get("answers", "").split("|") if x.strip()]
+            if q and a:
+                trivia_list.append({"q": q, "answers": a})
     if not trivia_list:
-        raise RuntimeError("No trivia questions were loaded – check your CSV.")
+        raise RuntimeError("No trivia questions found in CSV!")
     random.shuffle(trivia_list)
-    print(f"[DEBUG] Loaded {len(trivia_list)} trivia questions.")
+    print(f"[TRIVIA] Loaded {len(trivia_list)} questions.")
 
 def load_trivia_data():
-    path = pathlib.Path(TRIVIA_DATA_FILE)
-    if not path.exists() or path.stat().st_size == 0:
+    p = pathlib.Path(TRIVIA_DATA_FILE)
+    if not p.exists() or p.stat().st_size == 0:
         return {}
     try:
-        return json.loads(path.read_text())
+        return json.loads(p.read_text())
     except json.JSONDecodeError:
-        print("[TRIVIA] Corrupted JSON – starting with empty data.")
+        print("[TRIVIA] Corrupt JSON, resetting.")
         return {}
 
-def save_trivia_data(data):
+def save_trivia_data(data: dict):
     tmp = pathlib.Path(TRIVIA_DATA_FILE + ".tmp")
     tmp.write_text(json.dumps(data, indent=2))
     tmp.replace(TRIVIA_DATA_FILE)
-    
+
+# ---- main trivia loop ---------------------------------------------
 async def trivia_loop(channel: discord.TextChannel):
-    global current_q, answerers, round_started_at, answered, trivia_running
+    global current_q, answerers, answered, round_started_at, trivia_running
     data = load_trivia_data()
 
     try:
         while trivia_running:
-            # 1) pick & announce a question  ────────────────────────────────
+            # pick question
             current_q = trivia_list.pop(0)
             trivia_list.append(current_q)
             answerers.clear()
             answered = False
+            first_correct_event.clear()
 
-            # open the channel for answers
+            # open channel
             await _lock_channel(channel, allow_send=True)
 
-            embed = discord.Embed(
-                title="🌌 Spica's Trivia Challenge",
-                description=current_q["q"],
-                color=discord.Color.purple()
-            ).set_thumbnail(url=THUMBNAIL_URL
-            ).set_footer(text="You have 4 min 30 s — first correct gets 2 pts, everyone else 1 pt!")
-
+            embed = (discord.Embed(title="🌌 Spica's Trivia Challenge",
+                                   description=current_q["q"],
+                                   color=discord.Color.purple())
+                     .set_thumbnail(url=THUMBNAIL_URL)
+                     .set_footer(text="4 m 30 s max • first correct = 2 pts"))
             await channel.send(embed=embed)
 
             round_started_at = time.monotonic()
 
-            # 2) wait until either window expires or no correct answer came  ─
-            sleep_left = QUIZ_LENGTH_SEC
-            while sleep_left > 0 and not answered:
-                await asyncio.sleep(1)
-                sleep_left -= 1
-            
-            if answered:
-                # someone answered early – keep collecting for the 5‑second window
-                await asyncio.sleep(POST_ANSWER_WINDOW)
+            # wait for first correct OR timeout
+            try:
+                await asyncio.wait_for(first_correct_event.wait(),
+                                       timeout=QUIZ_LENGTH_SEC)
+            except asyncio.TimeoutError:
+                # time's up
+                await channel.send(embed=discord.Embed(
+                    title="⏱️ Time’s Up!",
+                    description="Nobody got it right… maybe next time, Dreamers.",
+                    color=discord.Color.dark_grey()))
             else:
-                # nobody answered within 4 m 30 s
-                pass
-
-            # if nobody answered correctly, announce & skip scoring
-            if not answered:
-                await channel.send(
-                    embed=discord.Embed(
-                        title="⏱️ Time’s Up!",
-                        description="Nobody got it right… maybe next time, Dreamers.",
-                        color=discord.Color.dark_grey()
-                    )
-                )
-            else:
-                # keep channel open POST_ANSWER_WINDOW secs after 1st correct
+                # keep window open 5 s more
                 await asyncio.sleep(POST_ANSWER_WINDOW)
 
-                # compile & store results
+                # tally
                 results = sorted(answerers.values(), key=lambda r: r['time'])
-                leaderboard_lines = []
+                lines = []
                 for res in results:
                     uid = str(res['user'].id)
                     data[uid] = data.get(uid, 0) + res['points']
-                    leaderboard_lines.append(
-                        f"{res['user'].display_name} — `{res['points']} pt` ({int(res['time']*1000)} ms)"
-                    )
+                    lines.append(
+                        f"{res['user'].display_name} — `{res['points']} pt` "
+                        f"({int(res['time']*1000)} ms)")
                 save_trivia_data(data)
 
-                await channel.send(
-                    embed=discord.Embed(
-                        title="📜 Round Results",
-                        description="\n".join(leaderboard_lines),
-                        color=discord.Color.gold()
-                    ).set_thumbnail(url=THUMBNAIL_URL)
-                )
+                await channel.send(embed=discord.Embed(
+                    title="📜 Round Results",
+                    description="\n".join(lines),
+                    color=discord.Color.gold())
+                    .set_thumbnail(url=THUMBNAIL_URL))
 
-            # 3) lock channel & wait until next round ───────────────────────
+            # lock & wait for next round
             await _lock_channel(channel, allow_send=False)
-
-            # announce upcoming round 5 s before restart
             elapsed = time.monotonic() - round_started_at
-            wait_remaining = max(0, INTER_ROUND_COOLDOWN - elapsed - PRE_ANNOUNCE_SEC)
-            await asyncio.sleep(wait_remaining)
-
+            await asyncio.sleep(max(0, INTER_ROUND_COOLDOWN - elapsed - PRE_ANNOUNCE_SEC))
             await channel.send("✨ Trivia resumes in **5 seconds**…")
             await asyncio.sleep(PRE_ANNOUNCE_SEC)
 
     finally:
-        # make sure the channel is re‑opened if loop is cancelled
         await _lock_channel(channel, allow_send=True)
         trivia_running = False
         current_q = None
 
-
-# ── start / stop / top commands (tiny changes) ───────────────────────────────
+# ---- commands ------------------------------------------------------
 @bot.command()
 async def starttrivia(ctx):
     global trivia_task, trivia_running
-    if ctx.channel.id != TRIVIA_CHANNEL_ID:  # hard‑coded channel guard
+    if ctx.channel.id != TRIVIA_CHANNEL_ID:
         return
     if trivia_running:
         await ctx.send("Trivia is already running!")
         return
     load_trivia()
     trivia_running = True
-    await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
     trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
+    await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
 
 @bot.command()
 async def stoptrivia(ctx):
-    global trivia_task, trivia_running
+    global trivia_running, trivia_task
     if ctx.channel.id != TRIVIA_CHANNEL_ID:
         return
     if not trivia_running:
@@ -494,78 +478,63 @@ async def triviatop(ctx):
     if not data:
         await ctx.send("Nobody has scored yet!")
         return
-
     top5 = sorted(data.items(), key=lambda t: t[1], reverse=True)[:5]
     lines = []
     for i, (uid, pts) in enumerate(top5, 1):
         user = await bot.fetch_user(int(uid))
         lines.append(f"**{i}.** {user.display_name} — `{pts}` pts")
+    await ctx.send(embed=discord.Embed(
+        title="🌟 Trivia Leaderboard",
+        description="\n".join(lines),
+        color=discord.Color.blue()).set_thumbnail(url=THUMBNAIL_URL))
 
-    embed = (discord.Embed(title="🌟 Trivia Leaderboard",
-                           description="\n".join(lines),
-                           color=discord.Color.blue())
-             .set_thumbnail(url=THUMBNAIL_URL))
-    await ctx.send(embed=embed)
-
-
-# ── answer listener (only small tweak: we stop accepting answers once channel locked) ──
+# ---- answer listener ----------------------------------------------
 @bot.event
 async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
-    global answered, answerers, current_q, round_started_at  
-
-    if (
-        message.channel.id != TRIVIA_CHANNEL_ID
-        or message.author.bot
-        or current_q is None
-        or not message.channel.permissions_for(message.author).send_messages
-    ):
+    global answered, answerers, current_q, round_started_at
+    if (message.channel.id != TRIVIA_CHANNEL_ID
+            or message.author.bot
+            or current_q is None
+            or not message.channel.permissions_for(message.author).send_messages):
         return
 
     content = message.content.lower().strip()
     if any(ans == content for ans in current_q["answers"]):
         if message.author.id in answerers:
-            return  # already counted
-        timestamp = time.monotonic()
+            return
+        delta = time.monotonic() - round_started_at
         answerers[message.author.id] = {
             "user": message.author,
             "points": 2 if not answered else 1,
-            "time": timestamp - round_started_at
+            "time": delta
         }
         if not answered:
             answered = True
+            first_correct_event.set()   # wake trivia_loop
 
-# Backup Trivia Data 
+# ════════════════════════════════════════
+#  HOURLY BACKUP OF trivia_data.json
+# ════════════════════════════════════════
 @tasks.loop(minutes=BACKUP_INTERVAL_MINUTES)
 async def backup_trivia_data():
     try:
-        with open(TRIVIA_DATA_FILE, "rb") as f:
-            content = f.read()
-            if not content:
-                print("[BACKUP] trivia_data.json is empty, skipping.")
-                return
-
-        filename = f"trivia_data_backup_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}.json"
-        channel = bot.get_channel(BACKUP_CHANNEL_ID)
-        if not channel:
-            print("[BACKUP] Backup channel not found.")
+        p = pathlib.Path(TRIVIA_DATA_FILE)
+        if not p.exists() or p.stat().st_size == 0:
             return
-
-        file = discord.File(fp=TRIVIA_DATA_FILE, filename=filename)
+        channel = bot.get_channel(BACKUP_CHANNEL_ID)
+        if channel is None:
+            print("[BACKUP] backup channel not found")
+            return
+        ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
         await channel.send(
-            content=f"🗂️ **Backup at UTC {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}**",
-            file=file
-        )
-        print(f"[BACKUP] Sent backup: {filename}")
-
+            content=f"🗂️ **Trivia backup – UTC {ts}**",
+            file=discord.File(fp=TRIVIA_DATA_FILE,
+                              filename=f"trivia_data_backup_{ts}.json"))
+        print("[BACKUP] sent backup", ts)
     except Exception as e:
-        print(f"[BACKUP] Failed to send backup: {e}")
-
-@bot.event
-async def on_ready():
-    print(f"[BOT] Logged in as {bot.user}")
-    backup_trivia_data.start()
+        print("[BACKUP] error:", e)
 
 # Help Command
 @bot.command()
