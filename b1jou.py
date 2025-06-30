@@ -400,7 +400,17 @@ async def trivia_loop(channel: discord.TextChannel):
             round_started_at = time.monotonic()
 
             # 2) wait until either window expires or no correct answer came  ─
-            await asyncio.sleep(QUIZ_LENGTH_SEC)
+            sleep_left = QUIZ_LENGTH_SEC
+            while sleep_left > 0 and not answered:
+                await asyncio.sleep(1)
+                sleep_left -= 1
+            
+            if answered:
+                # someone answered early – keep collecting for the 5‑second window
+                await asyncio.sleep(POST_ANSWER_WINDOW)
+            else:
+                # nobody answered within 4 m 30 s
+                pass
 
             # if nobody answered correctly, announce & skip scoring
             if not answered:
