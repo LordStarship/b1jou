@@ -422,11 +422,7 @@ async def trivia_loop(channel: discord.TextChannel):
                     uid = str(res['user'].id)
                     data[uid] = data.get(uid, 0) + res['points']
                 
-                    # Convert milliseconds to readable seconds.milliseconds (e.g. 2.347s)
-                    t = res['time_ms']
-                    seconds = int(t // 1000)
-                    millis = int(t % 1000)
-                    time_str = f"{seconds}.{millis:03d}s"
+                    time_str = res["formatted_time"]
                 
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({time_str})")
                 save_trivia_data(data)
@@ -488,10 +484,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
                     uid = str(res['user'].id)
                     data[uid] = data.get(uid, 0) + res['points']
                 
-                    t = res['time_ms']
-                    seconds = int(t // 1000)
-                    millis = int(t % 1000)
-                    time_str = f"{seconds}.{millis:03d}s"
+                    time_str = res["formatted_time"]
                 
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({time_str})")
                 save_trivia_data(data)
@@ -588,23 +581,27 @@ async def on_message(message: discord.Message):
     if any(ans == content for ans in current_q["answers"]):
         if message.author.id in answerers:
             return
+    
+        # Use Snowflake timestamp for precise timing
         now_ms = ((message.id >> 22) + DISCORD_EPOCH)
         start_ms = int(round_started_at * 1000)
         delta_ms = now_ms - start_ms
-        
-        await message.channel.send(
-            f"⭐ **{message.author.display_name}** answered in "
-            f"**{delta_ms//1000}.{delta_ms%1000:03d}s**"
-        )
-        
+    
+        # Format the delta into X.XXXs format
+        seconds = delta_ms // 1000
+        millis = delta_ms % 1000
+        formatted_time = f"{seconds}.{millis:03d}s"  # e.g. 2.200s
+    
         answerers[message.author.id] = {
             "user": message.author,
             "points": 2 if not answered else 1,
-            "time_ms": delta_ms
+            "time_ms": delta_ms,
+            "formatted_time": formatted_time
         }
+    
         if not answered:
             answered = True
-            first_correct_event.set()   # wake trivia_loop
+            first_correct_event.set()
 
 # ════════════════════════════════════════
 #  HOURLY BACKUP OF trivia_data.json
