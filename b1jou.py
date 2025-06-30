@@ -397,10 +397,8 @@ async def trivia_loop(channel: discord.TextChannel):
                                    description=current_q["q"],
                                    color=discord.Color.purple())
                      .set_thumbnail(url=THUMBNAIL_URL))
-            question_msg = await channel.send(embed=embed)
-
-            round_started_ms = ((question_msg.id >> 22) + DISCORD_EPOCH)
-            round_started_at = round_started_ms        
+            question_msg  = await channel.send(embed=embed)
+            round_started_at = ((question_msg.id >> 22) + DISCORD_EPOCH)  # keeps ms     
 
             # wait for first correct OR timeout
             try:
@@ -438,7 +436,7 @@ async def trivia_loop(channel: discord.TextChannel):
             await _lock_channel(channel, allow_send=False)
 
             # Calculate how much time has passed since round started (Snowflake)
-            now_ms = int(discord.utils.utcnow().timestamp() * 1000)
+            now_ms = ((discord.utils.time_snowflake(discord.utils.utcnow()) >> 22) + DISCORD_EPOCH)
             elapsed_ms = now_ms - round_started_at
 
             remaining_cooldown_ms = (INTER_ROUND_COOLDOWN * 1000) - elapsed_ms - (PRE_ANNOUNCE_SEC * 1000)
@@ -472,10 +470,8 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
                     color=discord.Color.teal())
                     .set_thumbnail(url=THUMBNAIL_URL))
 
-            question_msg = await channel.send(embed=embed)
-
-            round_started_ms = ((question_msg.id >> 22) + DISCORD_EPOCH)
-            round_started_at = round_started_ms        
+            question_msg  = await channel.send(embed=embed)
+            round_started_at = ((question_msg.id >> 22) + DISCORD_EPOCH)  # keeps ms
 
             try:
                 await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC)
@@ -591,24 +587,18 @@ async def on_message(message: discord.Message):
     if any(ans == content for ans in current_q["answers"]):
         if message.author.id in answerers:
             return
-    
-        # Use Snowflake timestamp for precise timing
-        now_ms = ((message.id >> 22) + DISCORD_EPOCH)
-        start_ms = int(round_started_at * 1000)
-        delta_ms = now_ms - start_ms
-    
-        # Format the delta into X.XXXs format
-        seconds = delta_ms // 1000
-        millis = delta_ms % 1000
-        formatted_time = f"{seconds}.{millis:03d}s"  # e.g. 2.200s
-    
+
+        now_ms      = ((message.id >> 22) + DISCORD_EPOCH)   
+        delta_ms    = now_ms - round_started_at            
+        time_str    = f"{delta_ms//1000}.{delta_ms%1000:03d}s"
+
         answerers[message.author.id] = {
-            "user": message.author,
+            "user":   message.author,
             "points": 2 if not answered else 1,
             "time_ms": delta_ms,
-            "formatted_time": formatted_time
+            "formatted_time": time_str
         }
-    
+
         if not answered:
             answered = True
             first_correct_event.set()
