@@ -399,7 +399,7 @@ async def trivia_loop(channel: discord.TextChannel):
                      .set_thumbnail(url=THUMBNAIL_URL))
             await channel.send(embed=embed)
 
-            round_started_at = int(time.time() * 1000)
+            round_started_at = (discord.utils.time_snowflake(discord.utils.utcnow()) >> 22) + DISCORD_EPOCH
 
             # wait for first correct OR timeout
             try:
@@ -435,8 +435,15 @@ async def trivia_loop(channel: discord.TextChannel):
 
             # lock & wait for next round
             await _lock_channel(channel, allow_send=False)
-            elapsed = time.monotonic() - round_started_at
-            await asyncio.sleep(max(0, INTER_ROUND_COOLDOWN - elapsed - PRE_ANNOUNCE_SEC))
+            
+            # Calculate how much time has passed since round started (Snowflake)
+            now_ms = int(discord.utils.utcnow().timestamp() * 1000)
+            elapsed_ms = now_ms - round_started_at
+            
+            remaining_cooldown_ms = (INTER_ROUND_COOLDOWN * 1000) - elapsed_ms - (PRE_ANNOUNCE_SEC * 1000)
+            if remaining_cooldown_ms > 0:
+                await asyncio.sleep(remaining_cooldown_ms / 1000)
+            
             await channel.send("✨ Trivia resumes in **5 seconds**…")
             await asyncio.sleep(PRE_ANNOUNCE_SEC)
 
@@ -465,7 +472,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
                      .set_thumbnail(url=THUMBNAIL_URL))
 
             await channel.send(embed=embed)
-            round_started_at = int(time.time() * 1000)
+            round_started_at = (discord.utils.time_snowflake(discord.utils.utcnow()) >> 22) + DISCORD_EPOCH
 
             try:
                 await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC)
