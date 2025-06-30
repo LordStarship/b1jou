@@ -625,6 +625,27 @@ async def backup_trivia_data():
     except Exception as e:
         print("[BACKUP] error:", e)
         
+@bot.command()
+async def backuptrivia(ctx):
+    if ctx.channel.id != BACKUP_CHANNEL_ID:
+        return await ctx.send("This command can only be used in the backup channel.")
+    
+    try:
+        p = pathlib.Path(TRIVIA_DATA_FILE)
+        if not p.exists() or p.stat().st_size == 0:
+            return await ctx.send("⚠️ Trivia data file is empty or missing.")
+        
+        ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        await ctx.send(
+            content=f"🗂️ **Manual Trivia Backup – UTC {ts}**",
+            file=discord.File(fp=TRIVIA_DATA_FILE,
+                              filename=f"trivia_data_backup_{ts}.json"))
+        print("[MANUAL BACKUP] Sent successfully")
+    
+    except Exception as e:
+        print("[MANUAL BACKUP] Error:", e)
+        await ctx.send("⚠️ Failed to send backup.")
+        
 @bot.event
 async def on_ready():
     if not backup_trivia_data.is_running():
