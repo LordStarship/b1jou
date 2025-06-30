@@ -511,7 +511,6 @@ async def on_message(message: discord.Message):
             "points": 2 if not answered else 1,
             "time": timestamp - round_started_at
         }
-        global answered
         if not answered:
             answered = True
 
