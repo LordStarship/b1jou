@@ -399,7 +399,7 @@ async def trivia_loop(channel: discord.TextChannel):
                      .set_thumbnail(url=THUMBNAIL_URL))
             await channel.send(embed=embed)
 
-            round_started_at = time.monotonic()
+            round_started_at = int(time.time() * 1000)
 
             # wait for first correct OR timeout
             try:
@@ -465,7 +465,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
                      .set_thumbnail(url=THUMBNAIL_URL))
 
             await channel.send(embed=embed)
-            round_started_at = time.monotonic()
+            round_started_at = int(time.time() * 1000)
 
             try:
                 await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC)
