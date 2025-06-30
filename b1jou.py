@@ -503,11 +503,12 @@ async def triviatop(ctx):
 async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
+    global answered, answerers, current_q, round_started_at  
+
     if (
         message.channel.id != TRIVIA_CHANNEL_ID
         or message.author.bot
         or current_q is None
-        # channel locked → send_messages=False for @everyone, ignore late DMs/etc.
         or not message.channel.permissions_for(message.author).send_messages
     ):
         return
