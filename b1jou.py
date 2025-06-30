@@ -32,7 +32,7 @@ TRIVIA_CSV = 'trivia_sheet.csv'             # trivia question file
 TRIVIA_DATA_FILE = 'trivia_data.json'       # trivia data file
 TRIVIA_CHANNEL_ID = 1387653760175706172     # channel to send trivia
 QUIZ_LENGTH_SEC      = 270                  # 4m 30 s players can answer
-POST_ANSWER_WINDOW   = 5                    # window that stays open after 1st correct
+POST_ANSWER_WINDOW   = 3                    # window that stays open after 1st correct
 INTER_ROUND_COOLDOWN = 300                  # total cycle time = 5 min
 PRE_ANNOUNCE_SEC     = 5                    # “Trivia in 5 seconds!” heads‑up
 BACKUP_CHANNEL_ID = 1389077962116038848     # channel to receive backup
@@ -463,11 +463,10 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             answered = False
             first_correct_event.clear()
 
-            embed = (discord.Embed(title=f"🚀 Speedrun Trivia #{questions_asked+1}",
+            embed = (discord.Embed(title=f"Spica's Fast Trivia #{questions_asked+1}",
                                    description=current_q["q"],
                                    color=discord.Color.teal())
-                     .set_thumbnail(url=THUMBNAIL_URL)
-                     .set_footer(text="You have 4 min 30 s to answer."))
+                     .set_thumbnail(url=THUMBNAIL_URL))
 
             await channel.send(embed=embed)
             round_started_at = time.monotonic()
@@ -482,6 +481,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             else:
                 await asyncio.sleep(POST_ANSWER_WINDOW)
 
+                # tally
                 results = sorted(answerers.values(), key=lambda r: r['time_ms'])
                 lines = []
                 for res in results:
@@ -553,7 +553,7 @@ async def stoptrivia(ctx):
     trivia_running = False
     if trivia_task:
         trivia_task.cancel()
-    await ctx.send("🛑 Trivia stopped. Until next time, Dreamers.")
+    await ctx.send("Trivia stopped. Until next time, Dreamers.")
 
 
 @bot.command()
@@ -592,6 +592,11 @@ async def on_message(message: discord.Message):
         start_ms = int(round_started_at * 1000)
         delta_ms = now_ms - start_ms
         
+        await message.channel.send(
+            f"⭐ **{message.author.display_name}** answered in "
+            f"**{delta_ms//1000}.{delta_ms%1000:03d}s**"
+        )
+        
         answerers[message.author.id] = {
             "user": message.author,
             "points": 2 if not answered else 1,
@@ -622,6 +627,12 @@ async def backup_trivia_data():
         print("[BACKUP] sent backup", ts)
     except Exception as e:
         print("[BACKUP] error:", e)
+        
+@bot.event
+async def on_ready():
+    if not backup_trivia_data.is_running():
+        backup_trivia_data.start()
+    print(f"[BOT] Logged in as {bot.user}")
 
 # Help Command
 @bot.command()
