@@ -251,7 +251,7 @@ class JoinActionView(ui.View):
                 pass
 
     @ui.button(label="Assign Member Role", style=discord.ButtonStyle.success)
-    async def assign_role(self, interaction: Interaction, button: ui.Button):
+    async def assign_user_role(self, interaction: Interaction, button: ui.Button):
         role = interaction.guild.get_role(1387624217117462538)
         if not role:
             await interaction.response.send_message("Role not found.", ephemeral=True)
@@ -267,7 +267,7 @@ class JoinActionView(ui.View):
             await interaction.response.send_message("I lack permission to assign the role.", ephemeral=True)
             
     @ui.button(label="Assign Bot Role", style=discord.ButtonStyle.success)
-    async def assign_role(self, interaction: Interaction, button: ui.Button):
+    async def assign_bot_role(self, interaction: Interaction, button: ui.Button):
         role = interaction.guild.get_role(1387624066801733643)
         if not role:
             await interaction.response.send_message("Role not found.", ephemeral=True)
