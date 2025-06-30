@@ -73,81 +73,58 @@ PRAYER_QUOTES = [
 THUMBNAIL_URL = "https://cdn.discordapp.com/attachments/1387623832549986325/1387658664185303061/th-913589016.jpeg"
 IMAGE_URL = "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.zerochan.net%2FGeopelia.full.4086266.jpg"
 
-LOCAL_CACHE: dict[str, dict] = {}    
-LAST_FLUSHED = time.monotonic()
-FLUSH_EVERY_SEC = 30
-
-# ------------- helper ---------------------------------
-LOCAL_CACHE: dict[str, dict[str, dict]] = {}  # guild_id → user_id → user_data
-LAST_FLUSHED = time.monotonic()
-FLUSH_EVERY_SEC = 30  # Tune flush interval
-
-# Helper to bump a user's prayer info
-def bump_prayer(gid: str, uid: str, *, today: datetime.date, is_spica: bool):
-    gcache = LOCAL_CACHE.setdefault(gid, {})
-    udata = gcache.setdefault(uid, {"count": 0, "streak": 0, "last": None})
-
-    last_date = datetime.strptime(udata["last"], "%Y-%m-%d").date() if udata["last"] else None
-
-    if is_spica:
-        if last_date == today:
-            pass
-        elif last_date == today - timedelta(days=1):
-            udata["streak"] += 1
-        else:
-            udata["streak"] = 1
-    udata["count"] += 1
-    udata["last"] = str(today)
-
-# Flush to Firestore if enough time has passed
-async def flush_to_firestore():
-    global LAST_FLUSHED
-    if time.monotonic() - LAST_FLUSHED < FLUSH_EVERY_SEC:
-        return
-
-    batch = db.batch()
-    for gid, users in LOCAL_CACHE.items():
-        for uid, payload in users.items():
-            doc = db.collection("guilds").document(gid).collection("users").document(uid)
-            batch.set(doc, payload, merge=True)
-
-            # Update leaderboard too
-            lb_doc = db.collection("guilds").document(gid).collection("leaderboard").document(uid)
-            batch.set(lb_doc, {
-                "user_id": uid,
-                "count": payload["count"],
-                "streak": payload["streak"]
-            }, merge=True)
-
-        # Also bump global counter without reading it
-        gdoc = db.collection("guilds").document(gid)
-        batch.set(gdoc, {"global": firestore.Increment(1)}, merge=True)
-
-    await asyncio.to_thread(batch.commit)
-    LAST_FLUSHED = time.monotonic()
-
 # Pray command
 @bot.command()
 async def pray(ctx, *args):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
         return
 
-    guild_id = str(ctx.guild.id)
+    guild_id = str(ctx.guild.id) if ctx.guild else "DM"
     user_id = str(ctx.author.id)
     today = datetime.utcnow().date()
+
+    # Firestore fetch
+    user_data = await load_user_data(guild_id, user_id)
+    guild_ref = db.collection('guilds').document(guild_id)
+    guild_doc = guild_ref.get()
+    guild_data = guild_doc.to_dict() if guild_doc.exists else {"global": 0}
+
+    last_prayed_str = user_data.get("last_prayed")
+    last_prayed_date = datetime.strptime(last_prayed_str, "%Y-%m-%d").date() if last_prayed_str else None
+
+    is_first_pray = last_prayed_date is None
     is_spica_pray = len(args) == 0
+    continued_streak = False
+    reset_streak = False
 
-    bump_prayer(guild_id, user_id, today=today, is_spica=is_spica_pray)
-    await flush_to_firestore()
+    if is_spica_pray:
+        if last_prayed_date == today:
+            pass  # already prayed today
+        elif last_prayed_date == today - timedelta(days=1):
+            user_data["streak"] += 1
+            continued_streak = True
+        elif is_first_pray:
+            user_data["streak"] = 1
+        else:
+            user_data["streak"] = 1
+            reset_streak = True
+    else:
+        user_data["streak"] = user_data.get("streak", 0)
 
-    # Fetch user's cached data for display
-    user_data = LOCAL_CACHE[guild_id][user_id]
-    streak = user_data.get("streak", 0)
-    continued_streak = streak > 1
-    reset_streak = streak == 1 and not is_spica_pray
+    user_data["count"] = user_data.get("count", 0) + 1
+    user_data["last_prayed"] = str(today)
+
+    await save_user_data(guild_id, user_id, user_data)
+    await increment_global_prayers(guild_id)
+    db.collection('guilds').document(guild_id).collection('leaderboard').document(user_id).set({
+        "user_id": user_id,
+        "count": user_data["count"],
+        "streak": user_data["streak"]
+    }, merge=True)
 
     # Build embed
-    mentions = ctx.message.mentions
+    streak = user_data["streak"]
+    mentions = [m for m in ctx.message.mentions]
     quote = random.choice(PRAYER_QUOTES)
 
     embed = discord.Embed(color=discord.Color.purple())
