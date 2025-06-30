@@ -486,13 +486,14 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
                 lines = []
                 for res in results:
                     uid = str(res['user'].id)
-                    session_scores[uid] = session_scores.get(uid, 0) + 1
                     data[uid] = data.get(uid, 0) + res['points']
-
+                
                     t = res['time_ms']
-                    time_str = f"{t // 1000}.{t % 1000:03d}s"
+                    seconds = int(t // 1000)
+                    millis = int(t % 1000)
+                    time_str = f"{seconds}.{millis:03d}s"
+                
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({time_str})")
-
                 save_trivia_data(data)
                 await channel.send(embed=discord.Embed(
                     title="📜 Round Results",
