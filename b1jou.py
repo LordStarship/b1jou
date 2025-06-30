@@ -27,6 +27,7 @@ DEBUG_CHANNELS = {
 }
 
 ########## CONFIG ##########
+DISCORD_EPOCH = 1420070400000               # discord snowflake
 TRIVIA_CSV = 'trivia_sheet.csv'             # trivia question file
 TRIVIA_DATA_FILE = 'trivia_data.json'       # trivia data file
 TRIVIA_CHANNEL_ID = 1387653760175706172     # channel to send trivia
@@ -327,9 +328,7 @@ async def on_member_join(member):
             view=JoinActionView(member)
         )
         
-# ════════════════════════════════════════
-#  TRIVIA ENGINE
-# ════════════════════════════════════════
+# Trivia
 trivia_list: list[dict] = []
 trivia_task: asyncio.Task | None = None
 trivia_running = False
@@ -337,7 +336,7 @@ current_q: dict | None = None
 answerers: dict = {}
 round_started_at = 0.0
 answered = False
-first_correct_event = asyncio.Event()     # << new
+first_correct_event = asyncio.Event()
 
 # ---- channel lock / unlock ----------------------------------------
 async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
@@ -397,8 +396,7 @@ async def trivia_loop(channel: discord.TextChannel):
             embed = (discord.Embed(title="🌌 Spica's Trivia Challenge",
                                    description=current_q["q"],
                                    color=discord.Color.purple())
-                     .set_thumbnail(url=THUMBNAIL_URL)
-                     .set_footer(text="4 m 30 s max • first correct = 2 pts"))
+                     .set_thumbnail(url=THUMBNAIL_URL))
             await channel.send(embed=embed)
 
             round_started_at = time.monotonic()
@@ -418,14 +416,19 @@ async def trivia_loop(channel: discord.TextChannel):
                 await asyncio.sleep(POST_ANSWER_WINDOW)
 
                 # tally
-                results = sorted(answerers.values(), key=lambda r: r['time'])
+                results = sorted(answerers.values(), key=lambda r: r['time_ms'])
                 lines = []
                 for res in results:
                     uid = str(res['user'].id)
                     data[uid] = data.get(uid, 0) + res['points']
-                    lines.append(
-                        f"{res['user'].display_name} — `{res['points']} pt` "
-                        f"({int(res['time']*1000)} ms)")
+                
+                    # Convert milliseconds to readable seconds.milliseconds (e.g. 2.347s)
+                    t = res['time_ms']
+                    seconds = int(t // 1000)
+                    millis = int(t % 1000)
+                    time_str = f"{seconds}.{millis:03d}s"
+                
+                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({time_str})")
                 save_trivia_data(data)
 
                 await channel.send(embed=discord.Embed(
@@ -446,9 +449,82 @@ async def trivia_loop(channel: discord.TextChannel):
         trivia_running = False
         current_q = None
 
+async def speedrun_trivia_loop(channel: discord.TextChannel):
+    global current_q, answerers, answered, round_started_at, trivia_running
+    session_scores = {}
+    questions_asked = 0
+    data = load_trivia_data()
+
+    try:
+        while trivia_running and questions_asked < 30:
+            current_q = trivia_list.pop(0)
+            trivia_list.append(current_q)
+            answerers.clear()
+            answered = False
+            first_correct_event.clear()
+
+            embed = (discord.Embed(title=f"🚀 Speedrun Trivia #{questions_asked+1}",
+                                   description=current_q["q"],
+                                   color=discord.Color.teal())
+                     .set_thumbnail(url=THUMBNAIL_URL)
+                     .set_footer(text="You have 4 min 30 s to answer."))
+
+            await channel.send(embed=embed)
+            round_started_at = time.monotonic()
+
+            try:
+                await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC)
+            except asyncio.TimeoutError:
+                await channel.send(embed=discord.Embed(
+                    title="⏱️ Time’s Up!",
+                    description="Nobody got it right… maybe next one.",
+                    color=discord.Color.dark_grey()))
+            else:
+                await asyncio.sleep(POST_ANSWER_WINDOW)
+
+                results = sorted(answerers.values(), key=lambda r: r['time_ms'])
+                lines = []
+                for res in results:
+                    uid = str(res['user'].id)
+                    session_scores[uid] = session_scores.get(uid, 0) + 1
+                    data[uid] = data.get(uid, 0) + res['points']
+
+                    t = res['time_ms']
+                    time_str = f"{t // 1000}.{t % 1000:03d}s"
+                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({time_str})")
+
+                save_trivia_data(data)
+                await channel.send(embed=discord.Embed(
+                    title="📜 Round Results",
+                    description="\n".join(lines),
+                    color=discord.Color.gold()))
+
+            await asyncio.sleep(5)
+            questions_asked += 1
+
+        # session finished
+        await _lock_channel(channel, allow_send=False)
+
+        if session_scores:
+            leaderboard = sorted(session_scores.items(), key=lambda t: t[1], reverse=True)
+            lines = []
+            for i, (uid, score) in enumerate(leaderboard, 1):
+                user = await bot.fetch_user(int(uid))
+                lines.append(f"**{i}.** {user.display_name} — `{score}` correct")
+            await channel.send(embed=discord.Embed(
+                title="🏁 Speedrun Leaderboard",
+                description="\n".join(lines),
+                color=discord.Color.green())
+                .set_thumbnail(url=THUMBNAIL_URL))
+        else:
+            await channel.send("No one scored any points this session.")
+    finally:
+        trivia_running = False
+        current_q = None
+
 # ---- commands ------------------------------------------------------
 @bot.command()
-async def starttrivia(ctx):
+async def starttrivia(ctx, mode: int = 1):
     global trivia_task, trivia_running
     if ctx.channel.id != TRIVIA_CHANNEL_ID:
         return
@@ -457,20 +533,27 @@ async def starttrivia(ctx):
         return
     load_trivia()
     trivia_running = True
-    trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
-    await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
+
+    if mode == 2:
+        trivia_task = asyncio.create_task(speedrun_trivia_loop(ctx.channel))
+        await ctx.send("💫 Trivia started! Answer fast — 30 questions incoming!")
+    else:
+        trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
+        await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
 
 @bot.command()
 async def stoptrivia(ctx):
-    global trivia_running, trivia_task
+    global trivia_task, trivia_running
     if ctx.channel.id != TRIVIA_CHANNEL_ID:
         return
     if not trivia_running:
         await ctx.send("Trivia isn’t running.")
         return
     trivia_running = False
-    trivia_task.cancel()
-    await ctx.send("🌌 Trivia session ended. Until next time, Dreamers.")
+    if trivia_task:
+        trivia_task.cancel()
+    await ctx.send("🛑 Trivia stopped. Until next time, Dreamers.")
+
 
 @bot.command()
 async def triviatop(ctx):
@@ -504,11 +587,14 @@ async def on_message(message: discord.Message):
     if any(ans == content for ans in current_q["answers"]):
         if message.author.id in answerers:
             return
-        delta = time.monotonic() - round_started_at
+        now_ms = ((message.id >> 22) + DISCORD_EPOCH)
+        start_ms = int(round_started_at * 1000)
+        delta_ms = now_ms - start_ms
+        
         answerers[message.author.id] = {
             "user": message.author,
             "points": 2 if not answered else 1,
-            "time": delta
+            "time_ms": delta_ms
         }
         if not answered:
             answered = True
