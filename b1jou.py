@@ -383,8 +383,11 @@ async def trivia_loop(channel: discord.TextChannel):
 
     try:
         while trivia_running:
-            current_q = trivia_list.pop(0)
-            trivia_list.append(current_q)
+            if not trivia_list:
+                load_trivia()  # reload and reshuffle
+
+            current_q = random.choice(trivia_list)
+            trivia_list.remove(current_q)
             answerers.clear()
             answered = False
             first_correct_event.clear()
