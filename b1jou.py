@@ -73,7 +73,7 @@ PRAYER_QUOTES = [
 THUMBNAIL_URL = "https://cdn.discordapp.com/attachments/1387623832549986325/1387658664185303061/th-913589016.jpeg"
 IMAGE_URL = "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.zerochan.net%2FGeopelia.full.4086266.jpg"
 
-# Pray command
+# PRAY COMMAND
 @bot.command()
 async def pray(ctx, *args):
     if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
@@ -83,9 +83,9 @@ async def pray(ctx, *args):
     user_id = str(ctx.author.id)
     today = datetime.utcnow().date()
 
-    # Firestore fetch
+    # Load data
     user_data = await load_user_data(guild_id, user_id)
-    guild_ref = db.collection('guilds').document(guild_id)
+    guild_ref = db.collection("guilds").document(guild_id)
     guild_doc = guild_ref.get()
     guild_data = guild_doc.to_dict() if guild_doc.exists else {"global": 0}
 
@@ -93,13 +93,15 @@ async def pray(ctx, *args):
     last_prayed_date = datetime.strptime(last_prayed_str, "%Y-%m-%d").date() if last_prayed_str else None
 
     is_first_pray = last_prayed_date is None
-    is_spica_pray = len(args) == 0
     continued_streak = False
     reset_streak = False
 
+    # STREAK logic for Spica
+    is_spica_pray = len(args) == 0 and len(ctx.message.mentions) == 0 and len(ctx.message.role_mentions) == 0
+
     if is_spica_pray:
         if last_prayed_date == today:
-            pass  # already prayed today
+            pass
         elif last_prayed_date == today - timedelta(days=1):
             user_data["streak"] += 1
             continued_streak = True
@@ -116,15 +118,27 @@ async def pray(ctx, *args):
 
     await save_user_data(guild_id, user_id, user_data)
     await increment_global_prayers(guild_id)
-    db.collection('guilds').document(guild_id).collection('leaderboard').document(user_id).set({
+    db.collection("guilds").document(guild_id).collection("leaderboard").document(user_id).set({
         "user_id": user_id,
         "count": user_data["count"],
         "streak": user_data["streak"]
     }, merge=True)
 
-    # Build embed
+    # Build Embed
     streak = user_data["streak"]
-    mentions = [m for m in ctx.message.mentions]
+    mentions = list(ctx.message.mentions)
+    role_mentions = list(ctx.message.role_mentions)
+
+    # Add from raw IDs
+    for tok in args:
+        if tok.isdigit():
+            if ctx.guild:
+                obj = ctx.guild.get_member(int(tok)) or ctx.guild.get_role(int(tok))
+                if isinstance(obj, discord.Member) and obj not in mentions:
+                    mentions.append(obj)
+                elif isinstance(obj, discord.Role) and obj not in role_mentions:
+                    role_mentions.append(obj)
+
     quote = random.choice(PRAYER_QUOTES)
 
     embed = discord.Embed(color=discord.Color.purple())
@@ -134,10 +148,12 @@ async def pray(ctx, *args):
     footer_info = get_footer_info(ctx.guild)
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
 
-    # Responses
+    # ===== MESSAGE HANDLING =====
+
     if len(mentions) == 1 and mentions[0].id == bot.user.id:
         embed.title = "⁉️ A prayer is sent... to me!?"
         embed.description = f"R-really? you would pray for me? thank you!! ///\n\n> {quote}"
+
     elif is_spica_pray:
         embed.title = "🙏 A prayer is sent to Spica!"
         embed.description = f"**{ctx.author.display_name}** has prayed for **Spica the Dreamer!**\nHer journey toward the throne of Procyon shall succeed!\n"
@@ -146,6 +162,7 @@ async def pray(ctx, *args):
         elif reset_streak:
             embed.description += "😢 Your daily streak was broken. Let's start again today!\n"
         embed.description += f"\n> {quote}"
+
     elif mentions:
         if len(mentions) == 1:
             embed.title = f"💫 A prayer is sent to {mentions[0].display_name}!"
@@ -159,6 +176,12 @@ async def pray(ctx, *args):
         else:
             embed.title = "🌌 Prayers are sent to everyone!"
             embed.description = f"Lots of prayers are sent to everybody!\n**{ctx.author.display_name}** loves everyone so much they're willing to send many!\n\n> {quote}"
+
+    elif role_mentions:
+        role_names = ", ".join(f"@{r.name}" for r in role_mentions)
+        embed.title = "🧑‍🤝‍🧑 Prayers to a whole role!"
+        embed.description = f"**{ctx.author.display_name}** sends prayers to the roles: {role_names}\n\n> {quote}"
+
     else:
         text_target = " ".join(args)
         embed.title = "⭐ A prayer is sent to somebody!"
@@ -412,20 +435,37 @@ async def trivia_loop(channel: discord.TextChannel):
 
                 # Tally code
                 results = sorted(answerers.values(), key=lambda r: r['time_ms'])
-                lines = []
+                lines   = []
+
                 for res in results:
-                    uid = str(res['user'].id)
-                    current_score = data.get(uid, {}).get("score", 0)
-                    best_time = data.get(uid, {}).get("best_time", float("inf"))
+                    uid        = str(res['user'].id)
+                    prev       = data.get(uid)
+
+                    if isinstance(prev, int):
+                        prev = {"score": prev, "best_time": float("inf"), "best_question": ""}
+
+                    prev = prev or {"score": 0, "best_time": float("inf"), "best_question": ""}
+
+                    new_score = prev["score"] + res["points"]
+
+                    if res["time_ms"] < prev["best_time"]:
+                        best_time     = res["time_ms"]
+                        best_question = current_q["q"]
+                    else:
+                        best_time     = prev["best_time"]
+                        best_question = prev["best_question"]
 
                     data[uid] = {
-                        "score": current_score + res["points"],
-                        "best_time": min(best_time, res["time_ms"]),
-                        "best_question": res["user"].display_name if res["time_ms"] < best_time else data.get(uid, {}).get("best_question", "")
+                        "score": new_score,
+                        "best_time": best_time,
+                        "best_question": best_question
                     }
-                    time_str = res["formatted_time"]
-                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({time_str})")
+
+                    t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
+                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
+
                 save_trivia_data(data)
+                # ─────────────
 
                 await channel.send(embed=discord.Embed(
                     title="📜 Round Results",
@@ -484,23 +524,41 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             else:
                 await asyncio.sleep(POST_ANSWER_WINDOW)
 
-                # Tally code
+                # ── tally section ──
                 results = sorted(answerers.values(), key=lambda r: r['time_ms'])
-                lines = []
+                lines   = []
+
                 for res in results:
-                    uid = str(res['user'].id)
+                    uid        = str(res['user'].id)
                     session_scores[uid] = session_scores.get(uid, 0) + res['points']
-                    current_score = data.get(uid, {}).get("score", 0)
-                    best_time = data.get(uid, {}).get("best_time", float("inf"))
+                    prev       = data.get(uid)
+
+                    if isinstance(prev, int):
+                        prev = {"score": prev, "best_time": float("inf"), "best_question": ""}
+
+                    prev = prev or {"score": 0, "best_time": float("inf"), "best_question": ""}
+
+                    new_score = prev["score"] + res["points"]
+
+                    if res["time_ms"] < prev["best_time"]:
+                        best_time     = res["time_ms"]
+                        best_question = current_q["q"]
+                    else:
+                        best_time     = prev["best_time"]
+                        best_question = prev["best_question"]
 
                     data[uid] = {
-                        "score": current_score + res["points"],
-                        "best_time": min(best_time, res["time_ms"]),
-                        "best_question": res["user"].display_name if res["time_ms"] < best_time else data.get(uid, {}).get("best_question", "")
+                        "score": new_score,
+                        "best_time": best_time,
+                        "best_question": best_question
                     }
-                    time_str = res["formatted_time"]
-                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({time_str})")
+
+                    t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
+                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
+
                 save_trivia_data(data)
+                # ─────────────
+                
                 await channel.send(embed=discord.Embed(
                     title="📜 Round Results",
                     description="\n".join(lines),
@@ -568,14 +626,24 @@ async def triviatop(ctx):
     if not data:
         return await ctx.send("Nobody has scored yet!")
 
-    top5 = sorted(data.items(), key=lambda t: t[1].get("score", 0), reverse=True)[:5]
+    # Filter out users with valid structured data
+    valid_data = {
+        uid: stats if isinstance(stats, dict) else {"score": stats}
+        for uid, stats in data.items()
+    }
+
+    top5 = sorted(valid_data.items(), key=lambda t: t[1].get("score", 0), reverse=True)[:5]
     lines = []
+
     for i, (uid, stats) in enumerate(top5, 1):
         user = await bot.fetch_user(int(uid))
-        time_str = f"{stats['best_time']//1000}.{stats['best_time']%1000:03d}s" if 'best_time' in stats else "N/A"
+        score = stats.get("score", 0)
+        best_time = stats.get("best_time")
         question = stats.get("best_question", "–")
+        time_str = f"{best_time // 1000}.{best_time % 1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
+
         lines.append(
-            f"**{i}. {user.display_name}** — `{stats['score']}` pts\n"
+            f"**{i}. {user.display_name}** — `{score}` pts\n"
             f"PB: `{time_str}` on *{question}*"
         )
 
@@ -584,30 +652,49 @@ async def triviatop(ctx):
         description="\n".join(lines),
         color=discord.Color.blue()
     ).set_thumbnail(url=THUMBNAIL_URL))
-    
+
 # b!triviastats
 @bot.command()
-async def triviastats(ctx):
+async def triviastats(ctx, target_input: str = None):
+    # Default to command author if no argument is given
+    if not target_input:
+        target = ctx.author
+    else:
+        # Try to resolve as mention or ID
+        try:
+            if target_input.isdigit():
+                target = await bot.fetch_user(int(target_input))
+            else:
+                target = await commands.MemberConverter().convert(ctx, target_input)
+        except Exception:
+            return await ctx.send("❌ Couldn't find that user.")
+        
+    uid = str(target.id)
     data = load_trivia_data()
-    uid = str(ctx.author.id)
     stats = data.get(uid)
 
     if not stats:
-        return await ctx.send(f"{ctx.author.mention}, you haven't scored yet!")
+        return await ctx.send(f"{target.display_name} hasn't scored yet!")
 
-    time_str = f"{stats['best_time']//1000}.{stats['best_time']%1000:03d}s" if 'best_time' in stats else "N/A"
+    # Handle legacy int-only score
+    if isinstance(stats, int):
+        stats = {"score": stats}
+
+    score = stats.get("score", 0)
+    best_time = stats.get("best_time")
     question = stats.get("best_question", "–")
+    time_str = f"{best_time // 1000}.{best_time % 1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
 
     embed = discord.Embed(
-        title="📊 Your Trivia Stats",
+        title=f"📊 Trivia Stats – {target.display_name}",
         description=(
-            f"**Total Score:** `{stats['score']}` pts\n"
+            f"**Total Score:** `{score}` pts\n"
             f"**Fastest Answer:** `{time_str}`\n"
             f"**Best Question:** *{question}*"
         ),
         color=discord.Color.gold()
     )
-    embed.set_thumbnail(url=THUMBNAIL_URL)
+    embed.set_thumbnail(url=target.display_avatar.url)
     await ctx.send(embed=embed)
 
 # Listener function for answer
