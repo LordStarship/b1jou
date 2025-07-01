@@ -2,7 +2,8 @@ import discord
 from discord.ext import commands, tasks
 from discord import ui, Interaction
 import os, json, random, csv, time, asyncio, pathlib
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from flask import Flask
 from threading import Thread
 import firebase_admin
@@ -38,6 +39,24 @@ PRE_ANNOUNCE_SEC     = 5                    # “Trivia in 5 seconds!” heads
 BACKUP_CHANNEL_ID = 1389077962116038848     # channel to receive backup
 BACKUP_INTERVAL_MINUTES = 60                # backup every 1 hour
 #############################
+
+###### BOSS CONFIG ##########
+BOSS_CFG = {
+    "CHANNEL_ID": 1387653760175706172,  # where b!hit works
+    "HP_RANGE": (1000, 6000),           # min / max daily HP
+    "DMG_RANGE": (1, 10),               # random damage per hit
+    "COOLDOWN_S": 600,                  # 10‑minute per‑user cooldown
+}
+
+boss_state = {
+    "active": False,
+    "boss_id": None,
+    "hp": 0,
+    "max_hp": 0,
+    "damage_by": defaultdict(int),      # user_id -> dmg
+    "last_hit": {},                     # user_id -> datetime
+}  
+############################
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -775,13 +794,148 @@ async def backuptrivia(ctx):
         print("[MANUAL BACKUP] Error:", e)
         await ctx.send("⚠️ Failed to send backup.")
         
-# Call backup loop when bot runs
+        
+# Boss Fight Helpers
+FLAVOR_CSV = "boss_flavor.csv"
+    
+def _load_flavor_lines() -> list[str]:
+    path = pathlib.Path(FLAVOR_CSV)
+    if not path.exists():
+        print("[BOSS] No flavor CSV, falling back to built‑ins")
+        return []
+    try:
+        with path.open(encoding="utf-8") as f:
+            return [row["text"].strip()
+                    for row in csv.DictReader(f)
+                    if row.get("text", "").strip()]
+    except Exception as e:
+        print("[BOSS] CSV read error:", e)
+        return []
+    
+FLAVOR_LINES = _load_flavor_lines()
+if not FLAVOR_LINES:    
+    FLAVOR_LINES = [
+        "{attacker} hits {boss} for {damage} dmg! ({hp_left}/{hp_max})"
+    ]
+
+def _cooldown_left(uid: int) -> int:
+    """Return seconds left, 0 if off cooldown."""
+    last = boss_state["last_hit"].get(uid)
+    if not last:
+        return 0
+    left = BOSS_CFG["COOLDOWN_S"] - int((datetime.utcnow() - last).total_seconds())
+    return max(left, 0)
+
+def _format_leaderboard() -> str:
+    if not boss_state["damage_by"]:
+        return "Nobody has dealt damage yet!"
+    lines = []
+    for i, (uid, dmg) in enumerate(
+        sorted(boss_state["damage_by"].items(), key=lambda x: x[1], reverse=True), 1
+    ):
+        user = bot.get_user(uid) or f"<@{uid}>"
+        lines.append(f"**{i}.** {getattr(user, 'display_name', user)} — `{dmg}` dmg")
+    return "\n".join(lines)
+
+
+# Administrator command: starts the boss
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def startboss(ctx, boss: discord.Member = None, hp_min: int = None, hp_max: int = None):
+    """b!startboss [@target] [hp_min] [hp_max]  – admin only"""
+    if boss_state["active"]:
+        return await ctx.send("⚔️ A boss is already active!")
+
+    cfg_min, cfg_max = BOSS_CFG["HP_RANGE"]
+    hp_min  = hp_min or cfg_min
+    hp_max  = hp_max or cfg_max
+    if hp_min < 100 or hp_min > hp_max:
+        return await ctx.send("❌ Invalid HP range.")
+
+    boss_state.update(
+        active=True,
+        boss_id=boss.id if boss else None,
+        hp=random.randint(hp_min, hp_max),
+        max_hp=0,            
+        damage_by=defaultdict(int),
+        last_hit={},
+    )
+    boss_state["max_hp"] = boss_state["hp"]
+
+    target_name = boss.display_name if boss else "???"
+    await ctx.send(
+        embed=discord.Embed(
+            title="LordStarship appears! Defeat him so the server's not stinky!",
+            description=f"**Target:** {target_name}\n"
+                        f"**HP:** `{boss_state['hp']}`\n\n"
+                        f"Type **`b!hit`** to attack (10 min cooldown).",
+            color=discord.Color.red())
+    )
+
+
+# b!hit to hits the boss
+@bot.command()
+async def hit(ctx):
+    if not boss_state["active"]:
+        return
+    if ctx.channel.id != BOSS_CFG["CHANNEL_ID"]:
+        return
+
+    uid = ctx.author.id
+    cd_left = _cooldown_left(uid)
+    if cd_left > 0:
+        return await ctx.reply(f"⏳ Cooldown! Try again in `{cd_left}` s.")
+
+    dmg = random.randint(*BOSS_CFG["DMG_RANGE"])
+    boss_state["hp"] -= dmg
+    boss_state["damage_by"][uid] += dmg
+    boss_state["last_hit"][uid] = datetime.utcnow()
+
+    # fun flavour lines
+    template = random.choice(FLAVOR_LINES)
+    msg = template.format(
+        attacker=ctx.author.display_name,
+        boss=ctx.guild.get_member(boss_state["boss_id"]).display_name if boss_state["boss_id"] else "the boss",
+        damage=dmg,
+        hp_left=max(boss_state["hp"], 0),
+        hp_max=boss_state["max_hp"],
+    )
+    await ctx.send(msg)
+
+    # defeat check
+    if boss_state["hp"] <= 0:
+        lb = _format_leaderboard()
+        boss_state["active"] = False
+        await ctx.send(
+            embed=discord.Embed(
+                title="🏆 Boss Defeated!",
+                description=f"**MVPs:**\n{lb}",
+                color=discord.Color.green()
+            )
+        )
+
+# Resets the boss at 00:00 UTC
+async def daily_boss_reset():
+    while True:
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        await asyncio.sleep((nxt - now).total_seconds())
+
+        boss_state["active"] = False   # ends any ongoing battle
+        # auto‑spawn a new random boss (optional):
+        ch = bot.get_channel(BOSS_CFG["CHANNEL_ID"])
+        if ch:
+            await startboss.callback(await bot.get_context(
+                await ch.send("⏰ Resetting daily boss…")), ch.guild.owner)  # spoof ctx
+            
+# Call loop when bot runs
 @bot.event
 async def on_ready():
     await bot.wait_until_ready()
     if not backup_trivia_data.is_running():
         backup_trivia_data.start()
     print(f"[BOT] Logged in as {bot.user}")
+    bot.loop.create_task(daily_boss_reset())
 
 # Help Command
 @bot.command()
