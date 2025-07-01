@@ -156,7 +156,7 @@ async def pray(ctx, *args):
 
     elif is_spica_pray:
         embed.title = "🙏 A prayer is sent to Spica!"
-        embed.description = f"**{ctx.author.display_name}** has prayed for **Spica the Dreamer!**\nHer journey toward the throne of Procyon shall succeed!\n"
+        embed.description = f"**{ctx.author.name}** has prayed for **Spica the Dreamer!**\nHer journey toward the throne of Procyon shall succeed!\n"
         if continued_streak:
             embed.description += f"🔥 **Daily Streak:** `{streak}` days! Keep praying for the Dreamer! 🔥\n"
         elif reset_streak:
@@ -165,27 +165,27 @@ async def pray(ctx, *args):
 
     elif mentions:
         if len(mentions) == 1:
-            embed.title = f"💫 A prayer is sent to {mentions[0].display_name}!"
-            embed.description = f"**{ctx.author.display_name}** has prayed for **{mentions[0].display_name}**! How sweet!\n\n> {quote}"
+            embed.title = f"💫 A prayer is sent to {mentions[0].name}!"
+            embed.description = f"**{ctx.author.name}** has prayed for **{mentions[0].name}**! How sweet!\n\n> {quote}"
         elif len(mentions) == 2:
-            embed.title = f"✨ Prayers are sent to {mentions[0].display_name} and {mentions[1].display_name}!"
-            embed.description = f"**{ctx.author.display_name}** prays for their friends, **{mentions[0].display_name}** and **{mentions[1].display_name}**! How caring!\n\n> {quote}"
+            embed.title = f"✨ Prayers are sent to {mentions[0].name} and {mentions[1].name}!"
+            embed.description = f"**{ctx.author.name}** prays for their friends, **{mentions[0].name}** and **{mentions[1].name}**! How caring!\n\n> {quote}"
         elif len(mentions) == 3:
-            embed.title = f"🌟 Lots of prayers for {mentions[0].display_name}, {mentions[1].display_name}, and {mentions[2].display_name}!"
-            embed.description = f"Wow! It seems like **{ctx.author.display_name}** has a lot of friends!\nSuch a kind soul!\n\n> {quote}"
+            embed.title = f"🌟 Lots of prayers for {mentions[0].name}, {mentions[1].name}, and {mentions[2].name}!"
+            embed.description = f"Wow! It seems like **{ctx.author.name}** has a lot of friends!\nSuch a kind soul!\n\n> {quote}"
         else:
             embed.title = "🌌 Prayers are sent to everyone!"
-            embed.description = f"Lots of prayers are sent to everybody!\n**{ctx.author.display_name}** loves everyone so much they're willing to send many!\n\n> {quote}"
+            embed.description = f"Lots of prayers are sent to everybody!\n**{ctx.author.name}** loves everyone so much they're willing to send many!\n\n> {quote}"
 
     elif role_mentions:
         role_names = ", ".join(f"@{r.name}" for r in role_mentions)
         embed.title = "🧑‍🤝‍🧑 Prayers to a whole role!"
-        embed.description = f"**{ctx.author.display_name}** sends prayers to the roles: {role_names}\n\n> {quote}"
+        embed.description = f"**{ctx.author.name}** sends prayers to the roles: {role_names}\n\n> {quote}"
 
     else:
         text_target = " ".join(args)
         embed.title = "⭐ A prayer is sent to somebody!"
-        embed.description = f"**{ctx.author.display_name}** sends a prayer for **{text_target}**!\nWhoever they are, they have a lovely friend praying for them!\n\n> {quote}"
+        embed.description = f"**{ctx.author.name}** sends a prayer for **{text_target}**!\nWhoever they are, they have a lovely friend praying for them!\n\n> {quote}"
 
     await ctx.send(embed=embed)
 
