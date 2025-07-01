@@ -574,7 +574,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             lines = []
             for i, (uid, score) in enumerate(leaderboard, 1):
                 user = await bot.fetch_user(int(uid))
-                lines.append(f"**{i}.** {user.display_name} — `{score}` correct")
+                lines.append(f"**{i}.** {user.display_name} — `{score}` points")
             await channel.send(embed=discord.Embed(
                 title="🏁 Speedrun Leaderboard",
                 description="\n".join(lines),
@@ -634,6 +634,7 @@ async def triviatop(ctx):
 
     top5 = sorted(valid_data.items(), key=lambda t: t[1].get("score", 0), reverse=True)[:5]
     lines = []
+    footer_info = get_footer_info(ctx.guild)
 
     for i, (uid, stats) in enumerate(top5, 1):
         user = await bot.fetch_user(int(uid))
@@ -643,7 +644,7 @@ async def triviatop(ctx):
         time_str = f"{best_time // 1000}.{best_time % 1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
 
         lines.append(
-            f"**{i}. {user.display_name}** — `{score}` pts\n"
+            f"**{i}. {user.display_name}** Total Points: `{score}` pts\n"
             f"PB: `{time_str}` on *{question}*"
         )
 
@@ -651,7 +652,8 @@ async def triviatop(ctx):
         title="🌟 Trivia Leaderboard",
         description="\n".join(lines),
         color=discord.Color.blue()
-    ).set_thumbnail(url=THUMBNAIL_URL))
+    ).set_thumbnail(url=THUMBNAIL_URL)
+    .set_footer(text=footer_info['text'], icon_url=footer_info['icon_url']))
 
 # b!triviastats
 @bot.command()
@@ -672,6 +674,7 @@ async def triviastats(ctx, target_input: str = None):
     uid = str(target.id)
     data = load_trivia_data()
     stats = data.get(uid)
+    footer_info = get_footer_info(ctx.guild)
 
     if not stats:
         return await ctx.send(f"{target.display_name} hasn't scored yet!")
@@ -695,6 +698,7 @@ async def triviastats(ctx, target_input: str = None):
         color=discord.Color.gold()
     )
     embed.set_thumbnail(url=target.display_avatar.url)
+    embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
     await ctx.send(embed=embed)
 
 # Listener function for answer
