@@ -32,31 +32,17 @@ DISCORD_EPOCH = 1420070400000               # discord snowflake
 TRIVIA_CSV = 'trivia_sheet.csv'             # trivia question file
 TRIVIA_DATA_FILE = 'trivia_data.json'       # trivia data file
 TRIVIA_CHANNEL_ID = 1387653760175706172     # channel to send trivia
-QUIZ_LENGTH_SEC      = 270                  # 4m 30 s players can answer
+QUIZ_LENGTH_SEC      = 270                  # 4m 30s players can answer
+QUIZ_LENGTH_SEC_LOOP = 30                   # 30s for fast trivia
 POST_ANSWER_WINDOW   = 3                    # window that stays open after 1st correct
 INTER_ROUND_COOLDOWN = 300                  # total cycle time = 5 min
 PRE_ANNOUNCE_SEC     = 5                    # “Trivia in 5 seconds!” heads‑up
 BACKUP_CHANNEL_ID = 1389077962116038848     # channel to receive backup
 BACKUP_INTERVAL_MINUTES = 60                # backup every 1 hour
+DEFAULT_TARGET_NAME = "Spica"               # used when b!hit has no mention
+TEMPLATE_FILE       = "hit_templates.csv"   # templates for the hit
+DAMAGE_FILE         = "damage_phrases.csv"  # templates for the damage
 #############################
-
-###### BOSS CONFIG ##########
-BOSS_CFG = {
-    "CHANNEL_ID": 1387653760175706172,  # where b!hit works
-    "HP_RANGE": (1000, 6000),           # min / max daily HP
-    "DMG_RANGE": (1, 10),               # random damage per hit
-    "COOLDOWN_S": 600,                  # 10‑minute per‑user cooldown
-}
-
-boss_state = {
-    "active": False,
-    "boss_id": None,
-    "hp": 0,
-    "max_hp": 0,
-    "damage_by": defaultdict(int),      # user_id -> dmg
-    "last_hit": {},                     # user_id -> datetime
-}  
-############################
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -262,16 +248,54 @@ async def top(ctx):
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
     await ctx.send(embed=embed)
 
+JOU_CSV = "bot_texts.csv"
+JOU_LINES: list[str] = []
+
+def load_jou_lines():
+    path = pathlib.Path(JOU_CSV)
+    if not path.exists():
+        print(f"[JOU] '{JOU_CSV}' not found – using default lines.")
+        return
+    with path.open(encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        JOU_LINES.clear()
+        for row in reader:
+            line = (row.get("line") or "").strip()
+            if line:
+                JOU_LINES.append(line)
+    print(f"[JOU] Loaded {len(JOU_LINES)} fun lines.")
+    
 # Ping 
 @bot.command()
-async def jou(ctx):
-    if ctx.guild and (ctx.guild.id, ctx.channel.id) not in DEBUG_CHANNELS:
-        return
+async def jou(ctx, target: discord.Member | None = None):
+    """
+    Admin with no args   -> classic latency ping.
+    Admin with target    -> fun line.
+    Regular member no arg (target ignored) -> fun line at Spica (or provided target).
+    """
+    is_admin = ctx.author.guild_permissions.administrator if ctx.guild else False
 
-    before = time.monotonic()
-    msg = await ctx.send("B1jou is calculating...")
-    ping = (time.monotonic() - before) * 1000
-    await msg.edit(content=f"🏓 Pong! Latency: `{int(ping)}ms`")
+    # ── Admin latency ping ──────────────────────────────
+    if is_admin and target is None:
+        before = time.monotonic()
+        msg    = await ctx.send("B1jou is calculating…")
+        ping   = (time.monotonic() - before) * 1000
+        return await msg.edit(content=f"🏓 Pong! Latency: `{int(ping)} ms`")
+
+    # ── Fun personalised line ──────────────────────────
+    if not JOU_LINES:        # fallback if CSV empty / absent
+        JOU_LINES.extend([
+            "{author} yeets a cosmic brick at {target}! Ouch!",
+            "{author} shares an existential meme with {target}.",
+            "{author} activates RGB powers against {target}!",
+        ])
+
+    line  = random.choice(JOU_LINES)
+    author_name  = ctx.author.display_name
+    target_name  = target.display_name if target else DEFAULT_TARGET_NAME
+    line_filled  = line.format(author=author_name, target=target_name)
+
+    await ctx.send(line_filled)
 
 # Member Joined Action
 welcome_messages = {}
@@ -534,7 +558,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             round_started_at = ((question_msg.id >> 22) + DISCORD_EPOCH)  
 
             try:
-                await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC)
+                await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC_LOOP)
             except asyncio.TimeoutError:
                 await channel.send(embed=discord.Embed(
                     title="⏱️ Time’s Up!",
@@ -607,6 +631,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
 
 # b!starttrivia main command
 @bot.command()
+@commands.has_permissions(administrator=True)
 async def starttrivia(ctx, mode: int = 1):
     global trivia_task, trivia_running
     if ctx.channel.id != TRIVIA_CHANNEL_ID:
@@ -626,6 +651,7 @@ async def starttrivia(ctx, mode: int = 1):
         
 # b!stoptrivia to stop trivia command
 @bot.command()
+@commands.has_permissions(administrator=True)
 async def stoptrivia(ctx):
     global trivia_task, trivia_running
     if ctx.channel.id != TRIVIA_CHANNEL_ID:
@@ -766,14 +792,14 @@ async def backup_trivia_data():
         ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
         await channel.send(
             content=f"🗂️ **Trivia backup – UTC {ts}**",
-            file=discord.File(fp=TRIVIA_DATA_FILE,
-                              filename=f"trivia_data_backup_{ts}.json"))
+            file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_backup_{ts}.json"))
         print("[BACKUP] sent backup", ts)
     except Exception as e:
         print("[BACKUP] error:", e)
         
 # b!backuptrivia for manual backup
 @bot.command()
+@commands.has_permissions(administrator=True)
 async def backuptrivia(ctx):
     if ctx.channel.id != BACKUP_CHANNEL_ID:
         return await ctx.send("This command can only be used in the backup channel.")
@@ -786,156 +812,64 @@ async def backuptrivia(ctx):
         ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
         await ctx.send(
             content=f"🗂️ **Manual Trivia Backup – UTC {ts}**",
-            file=discord.File(fp=TRIVIA_DATA_FILE,
-                              filename=f"trivia_data_backup_{ts}.json"))
+            file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_backup_{ts}.json"))
         print("[MANUAL BACKUP] Sent successfully")
     
     except Exception as e:
         print("[MANUAL BACKUP] Error:", e)
         await ctx.send("⚠️ Failed to send backup.")
-        
-        
-# Boss Fight Helpers
-FLAVOR_CSV = "boss_flavor.csv"
-    
-def _load_flavor_lines() -> list[str]:
-    path = pathlib.Path(FLAVOR_CSV)
-    if not path.exists():
-        print("[BOSS] No flavor CSV, falling back to built‑ins")
-        return []
-    try:
-        with path.open(encoding="utf-8") as f:
-            return [row["text"].strip()
-                    for row in csv.DictReader(f)
-                    if row.get("text", "").strip()]
-    except Exception as e:
-        print("[BOSS] CSV read error:", e)
-        return []
-    
-FLAVOR_LINES = _load_flavor_lines()
-if not FLAVOR_LINES:    
-    FLAVOR_LINES = [
-        "{attacker} hits {boss} for {damage} dmg! ({hp_left}/{hp_max})"
-    ]
 
-def _cooldown_left(uid: int) -> int:
-    """Return seconds left, 0 if off cooldown."""
-    last = boss_state["last_hit"].get(uid)
-    if not last:
-        return 0
-    left = BOSS_CFG["COOLDOWN_S"] - int((datetime.utcnow() - last).total_seconds())
-    return max(left, 0)
+# ─── Hit‑command assets ────────────────────────────────────────────
+TEMPLATES: list[str] = []
+DAMAGES:   list[str] = []
 
-def _format_leaderboard() -> str:
-    if not boss_state["damage_by"]:
-        return "Nobody has dealt damage yet!"
-    lines = []
-    for i, (uid, dmg) in enumerate(
-        sorted(boss_state["damage_by"].items(), key=lambda x: x[1], reverse=True), 1
-    ):
-        user = bot.get_user(uid) or f"<@{uid}>"
-        lines.append(f"**{i}.** {getattr(user, 'display_name', user)} — `{dmg}` dmg")
-    return "\n".join(lines)
+def _load_file(path: str) -> list[str]:
+    out = []
+    p = pathlib.Path(path)
+    if not p.exists():
+        print(f"[HIT] File not found: {p.resolve()}")
+        return out
+    with p.open(encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if row and row[0].strip():
+                out.append(row[0].strip())
+    print(f"[HIT] loaded {len(out):>3} lines from {path}")
+    return out
 
+def load_hit_assets():
+    """populate TEMPLATES and DAMAGES lists"""
+    TEMPLATES[:] = _load_file(TEMPLATE_FILE)
+    DAMAGES[:]   = _load_file(DAMAGE_FILE)
 
-# Administrator command: starts the boss
+# load once at import time
+load_hit_assets()
+
+# ─── fun b!hit ------------------------------------------------------
 @bot.command()
-@commands.has_permissions(administrator=True)
-async def startboss(ctx, boss: discord.Member = None, hp_min: int = None, hp_max: int = None):
-    """b!startboss [@target] [hp_min] [hp_max]  – admin only"""
-    if boss_state["active"]:
-        return await ctx.send("⚔️ A boss is already active!")
+async def hit(ctx, target: discord.Member | None = None):
+    # make sure we have data
+    if not TEMPLATES or not DAMAGES:
+        return await ctx.send("⚠️  No hit templates / damage phrases loaded.")
 
-    cfg_min, cfg_max = BOSS_CFG["HP_RANGE"]
-    hp_min  = hp_min or cfg_min
-    hp_max  = hp_max or cfg_max
-    if hp_min < 100 or hp_min > hp_max:
-        return await ctx.send("❌ Invalid HP range.")
+    # pick default target when none mentioned
+    if target is None:
+        target = (discord.utils.find(lambda m: m.name.lower()==DEFAULT_TARGET_NAME.lower() or m.display_name.lower()==DEFAULT_TARGET_NAME.lower(), ctx.guild.members) or ctx.author)   # fall back to self
 
-    boss_state.update(
-        active=True,
-        boss_id=boss.id if boss else None,
-        hp=random.randint(hp_min, hp_max),
-        max_hp=0,            
-        damage_by=defaultdict(int),
-        last_hit={},
-    )
-    boss_state["max_hp"] = boss_state["hp"]
+    # stop self‑harm
+    if target.id == ctx.author.id:
+        return await ctx.send("Why would you hit yourself? 🥺")
 
-    target_name = boss.display_name if boss else "???"
-    await ctx.send(
-        embed=discord.Embed(
-            title="LordStarship appears! Defeat him so the server's not stinky!",
-            description=f"**Target:** {target_name}\n"
-                        f"**HP:** `{boss_state['hp']}`\n\n"
-                        f"Type **`b!hit`** to attack (10 min cooldown).",
-            color=discord.Color.red())
+    tpl   = random.choice(TEMPLATES)
+    dmgln = random.choice(DAMAGES)
+
+    text = tpl.format(
+        attacker = ctx.author.display_name,
+        target   = target.display_name,
+        damage   = dmgln.format(target=target.display_name)
     )
 
-
-# b!hit to hits the boss
-@bot.command()
-async def hit(ctx):
-    if not boss_state["active"]:
-        return
-    if ctx.channel.id != BOSS_CFG["CHANNEL_ID"]:
-        return
-
-    uid = ctx.author.id
-    cd_left = _cooldown_left(uid)
-    if cd_left > 0:
-        return await ctx.reply(f"⏳ Cooldown! Try again in `{cd_left}` s.")
-
-    dmg = random.randint(*BOSS_CFG["DMG_RANGE"])
-    boss_state["hp"] -= dmg
-    boss_state["damage_by"][uid] += dmg
-    boss_state["last_hit"][uid] = datetime.utcnow()
-
-    # fun flavour lines
-    template = random.choice(FLAVOR_LINES)
-    msg = template.format(
-        attacker=ctx.author.display_name,
-        boss=ctx.guild.get_member(boss_state["boss_id"]).display_name if boss_state["boss_id"] else "the boss",
-        damage=dmg,
-        hp_left=max(boss_state["hp"], 0),
-        hp_max=boss_state["max_hp"],
-    )
-    await ctx.send(msg)
-
-    # defeat check
-    if boss_state["hp"] <= 0:
-        lb = _format_leaderboard()
-        boss_state["active"] = False
-        await ctx.send(
-            embed=discord.Embed(
-                title="🏆 Boss Defeated!",
-                description=f"**MVPs:**\n{lb}",
-                color=discord.Color.green()
-            )
-        )
-
-# Resets the boss at 00:00 UTC
-async def daily_boss_reset():
-    while True:
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        await asyncio.sleep((nxt - now).total_seconds())
-
-        boss_state["active"] = False   # ends any ongoing battle
-        # auto‑spawn a new random boss (optional):
-        ch = bot.get_channel(BOSS_CFG["CHANNEL_ID"])
-        if ch:
-            await startboss.callback(await bot.get_context(
-                await ch.send("⏰ Resetting daily boss…")), ch.guild.owner)  # spoof ctx
-            
-# Call loop when bot runs
-@bot.event
-async def on_ready():
-    await bot.wait_until_ready()
-    if not backup_trivia_data.is_running():
-        backup_trivia_data.start()
-    print(f"[BOT] Logged in as {bot.user}")
-    bot.loop.create_task(daily_boss_reset())
+    await ctx.send(text)
 
 # Help Command
 @bot.command()
@@ -962,6 +896,17 @@ async def help(ctx):
     )
 
     embed.add_field(
+        name="`b!hit [@target]`",
+        value=(
+            "👊 Bonk your friends (or Spica!) with random flavor text:\n"
+            "- Example: `b!hit @someone`\n"
+            "- No mention? It hits Spica by default\n"
+            "- Uses randomized attack + damage messages!"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
         name="`b!stats`",
         value="Shows your personal prayer count, streak, and server-wide totals 🔥",
         inline=False
@@ -974,16 +919,9 @@ async def help(ctx):
     )
 
     embed.add_field(
-        name="`b!jou`",
-        value="(Debug) Ping test for latency, usable only in bot debug channels 🛠️",
-        inline=False
-    )
-
-    embed.add_field(
-        name="`Auto Member Join`",
+        name="`b!jou [@target]`",
         value=(
-            "I will automatically greet newcomers in the welcome channel.\n"
-            "Admins can take action via buttons: `Assign Member`, `Kick`, or `Ban`."
+            "Sends a random fun line. Defaults to Spica if no target! ✨"
         ),
         inline=False
     )
@@ -995,6 +933,16 @@ async def help(ctx):
     )
 
     await ctx.send(embed=embed)
+
+
+# Call loop when bot runs
+@bot.event
+async def on_ready():
+    await bot.wait_until_ready()
+    load_jou_lines()
+    if not backup_trivia_data.is_running():
+        backup_trivia_data.start()
+    print(f"[BOT] Logged in as {bot.user}")
 
 # 🌐 Flask keep_alive() setup
 app = Flask('')

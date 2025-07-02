@@ -1,5 +1,0 @@
-text
-"{attacker} throws a bucket of bees at {boss}! It stings for {damage} HP! ({hp_left}/{hp_max})"
-"{attacker} bonks {boss} with the ban‑hammer, dealing {damage} damage! ({hp_left}/{hp_max})"
-"{attacker} reminds {boss} to hydrate. It’s super‑effective: {damage} HP lost! ({hp_left}/{hp_max})"
-"{attacker} drops a dad‑joke on {boss}. Laughter costs {damage} HP. ({hp_left}/{hp_max})"
