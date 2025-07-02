@@ -898,7 +898,7 @@ async def hit(ctx, target: discord.Member = None):
             return
         template = random.choice(TEMPLATES)
         damage = random.choice(DAMAGES)
-        result = template.replace("{attacker}", attacker_name).replace("{target}", target.display_name)
+        result = template.replace("{attacker}", attacker_name).replace("{target}", target.display_name).replace("{damage}", damage)
         embed = discord.Embed(
             title="💥 A hit has been landed!",
             description=f"{result}\n{damage}",
