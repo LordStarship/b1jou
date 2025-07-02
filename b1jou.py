@@ -896,12 +896,19 @@ async def hit(ctx, target: discord.Member = None):
         if not TEMPLATES or not DAMAGES:
             await ctx.send("⚠️ No hit templates or damage lines loaded.")
             return
+
         template = random.choice(TEMPLATES)
         damage = random.choice(DAMAGES)
-        result = template.replace("{attacker}", attacker_name).replace("{target}", target.display_name).replace("{damage}", damage)
+
+        if "{damage}" in template:
+            result = (template.replace("{attacker}", attacker_name).replace("{target}", target.display_name).replace("{damage}", damage.replace("{target}", target.display_name)))
+        else:
+            result = (template.replace("{attacker}", attacker_name).replace("{target}", target.display_name))
+            result = f"{result}\n{damage.replace('{target}', target.display_name)}"
+
         embed = discord.Embed(
             title="💥 A hit has been landed!",
-            description=f"{result}\n{damage}",
+            description=result,
             color=discord.Color.red()
         )
 
