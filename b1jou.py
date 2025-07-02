@@ -44,6 +44,20 @@ TEMPLATE_FILE       = "hit_templates.csv"   # templates for the hit
 DAMAGE_FILE         = "damage_phrases.csv"  # templates for the damage
 #############################
 
+TRIVIA_MODE1_CHANNELS = {
+    1387653760175706172,    # Cavern of Dreams #bot-commands
+    715855925285486685,     # LordStarship debug
+    1389860314488635504,    # Classic Trivia channel
+    # Add more channel IDs for Mode 1 here
+}
+
+TRIVIA_MODE2_CHANNELS = {
+    1387653760175706172,    # Cavern of Dreams #bot-commands
+    715855925285486685,     # LordStarship debug
+    1389860487499612190,    # Speedrun Trivia channel
+    # Add more channel IDs for Mode 2 here
+}
+
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
@@ -634,31 +648,38 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
 @commands.has_permissions(administrator=True)
 async def starttrivia(ctx, mode: int = 1):
     global trivia_task, trivia_running
-    if ctx.channel.id != TRIVIA_CHANNEL_ID:
-        return
+    channel_id = ctx.channel.id
+
+    # Validate channel for each mode
+    if mode == 1 and channel_id not in TRIVIA_MODE1_CHANNELS:
+        return await ctx.send("❌ This channel is not allowed for Classic Trivia.")
+    elif mode == 2 and channel_id not in TRIVIA_MODE2_CHANNELS:
+        return await ctx.send("❌ This channel is not allowed for Speedrun Trivia.")
+
     if trivia_running:
-        await ctx.send("Trivia is already running!")
-        return
+        return await ctx.send("❗ Trivia is already running!")
+
     load_trivia()
     trivia_running = True
 
     if mode == 2:
         trivia_task = asyncio.create_task(speedrun_trivia_loop(ctx.channel))
-        await ctx.send("💫 Trivia started! Answer fast — 30 questions incoming!")
+        await ctx.send("💫 Speedrun Trivia started! 30 rapid-fire questions incoming!")
     else:
         trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
-        await ctx.send("🌠 Trivia has begun! May the stars guide your knowledge!")
+        await ctx.send("🌠 Classic Trivia has begun! Answer wisely, Dreamers!")
         
 # b!stoptrivia to stop trivia command
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def stoptrivia(ctx):
     global trivia_task, trivia_running
-    if ctx.channel.id != TRIVIA_CHANNEL_ID:
-        return  
+    if ctx.channel.id not in (TRIVIA_MODE1_CHANNELS | TRIVIA_MODE2_CHANNELS):
+        return await ctx.send("This channel can't stop trivia.")
+    
     if not trivia_running:
-        await ctx.send("Trivia isn’t running.")
-        return
+        return await ctx.send("Trivia isn’t running.")
+
     trivia_running = False
     if trivia_task:
         trivia_task.cancel()
@@ -956,6 +977,7 @@ async def help(ctx):
 async def on_ready():
     await bot.wait_until_ready()
     load_jou_lines()
+    load_spica_lines()      
     if not backup_trivia_data.is_running():
         backup_trivia_data.start()
     print(f"[BOT] Logged in as {bot.user}")
