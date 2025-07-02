@@ -822,6 +822,15 @@ async def backuptrivia(ctx):
 # ─── Hit‑command assets ────────────────────────────────────────────
 TEMPLATES: list[str] = []
 DAMAGES:   list[str] = []
+SPICA_HIT_LINES: list[str] = []
+
+def load_spica_lines():
+    path = pathlib.Path("spica_hit_lines.csv")
+    if path.exists():
+        with path.open(encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            SPICA_HIT_LINES.clear()
+            SPICA_HIT_LINES.extend(row['line'] for row in reader if row.get('line'))
 
 def _load_file(path: str) -> list[str]:
     out = []
@@ -847,29 +856,36 @@ load_hit_assets()
 
 # ─── fun b!hit ------------------------------------------------------
 @bot.command()
-async def hit(ctx, target: discord.Member | None = None):
-    # make sure we have data
-    if not TEMPLATES or not DAMAGES:
-        return await ctx.send("⚠️  No hit templates / damage phrases loaded.")
+async def hit(ctx, target: discord.Member = None):
+    attacker_name = ctx.author.display_name
 
-    # pick default target when none mentioned
     if target is None:
-        target = (discord.utils.find(lambda m: m.name.lower()==DEFAULT_TARGET_NAME.lower() or m.display_name.lower()==DEFAULT_TARGET_NAME.lower(), ctx.guild.members) or ctx.author)   # fall back to self
+        # Hit Spica (fictional)
+        if not SPICA_HIT_LINES:
+            await ctx.send("⚠️ No Spica hit lines loaded.")
+            return
+        line = random.choice(SPICA_HIT_LINES).replace("{attacker}", attacker_name)
+        embed = discord.Embed(
+            title="🌠 A blow is dealt to Spica!",
+            description=line,
+            color=discord.Color.light_grey()
+        )
+    else:
+        # Normal hit between users
+        if not TEMPLATES or not DAMAGES:
+            await ctx.send("⚠️ No hit templates or damage lines loaded.")
+            return
+        template = random.choice(TEMPLATES)
+        damage = random.choice(DAMAGES)
+        result = template.replace("{attacker}", attacker_name).replace("{target}", target.display_name)
+        embed = discord.Embed(
+            title="💥 A hit has been landed!",
+            description=f"{result}\n{damage}",
+            color=discord.Color.red()
+        )
 
-    # stop self‑harm
-    if target.id == ctx.author.id:
-        return await ctx.send("Why would you hit yourself? 🥺")
-
-    tpl   = random.choice(TEMPLATES)
-    dmgln = random.choice(DAMAGES)
-
-    text = tpl.format(
-        attacker = ctx.author.display_name,
-        target   = target.display_name,
-        damage   = dmgln.format(target=target.display_name)
-    )
-
-    await ctx.send(text)
+    embed.set_footer(**get_footer_info(ctx.guild))
+    await ctx.send(embed=embed)
 
 # Help Command
 @bot.command()
