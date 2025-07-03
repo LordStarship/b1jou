@@ -410,14 +410,19 @@ async def on_member_join(member):
 # Trivia
 trivia_list: list[dict] = []
 trivia_task: asyncio.Task | None = None
-trivia_running = False
+trivia_running = {
+    1: False,  # Classic
+    2: False   # Speedrun
+}
 current_q: dict | None = None
 answerers: dict = {}
 round_started_at = 0.0
 answered = False
 first_correct_event = asyncio.Event()
-active_trivia_channel_id: int | None = None   
-
+active_trivia_channel_id = {
+    1: None,
+    2: None
+}
 # Lock/Unlock Channel
 async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
     ow = chan.overwrites_for(chan.guild.default_role)
@@ -646,20 +651,20 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
 @commands.has_permissions(administrator=True)
 async def starttrivia(ctx, mode: int = 1):
     global trivia_task, trivia_running, active_trivia_channel_id
+
     channel_id = ctx.channel.id
 
-    # Validate channel for each mode
     if mode == 1 and channel_id not in TRIVIA_MODE1_CHANNELS:
         return await ctx.send("❌ This channel is not allowed for Classic Trivia.")
     elif mode == 2 and channel_id not in TRIVIA_MODE2_CHANNELS:
         return await ctx.send("❌ This channel is not allowed for Speedrun Trivia.")
 
-    if trivia_running:
-        return await ctx.send("❗ Trivia is already running!")
+    if trivia_running[mode]:
+        return await ctx.send("❗ That mode is already running!")
 
     load_trivia()
-    trivia_running = True
-    active_trivia_channel_id = ctx.channel.id
+    trivia_running[mode] = True
+    active_trivia_channel_id[mode] = ctx.channel.id
 
     if mode == 2:
         trivia_task = asyncio.create_task(speedrun_trivia_loop(ctx.channel))
@@ -672,18 +677,26 @@ async def starttrivia(ctx, mode: int = 1):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def stoptrivia(ctx):
-    global trivia_task, trivia_running, active_trivia_channel_id
-    if ctx.channel.id not in (TRIVIA_MODE1_CHANNELS | TRIVIA_MODE2_CHANNELS):
-        return await ctx.send("This channel can't stop trivia.")
-    
-    if not trivia_running:
-        return await ctx.send("Trivia isn’t running.")
+    global trivia_task, trivia_running
 
-    trivia_running = False
-    active_trivia_channel_id = None
+    cid = ctx.channel.id
+
+    if cid in TRIVIA_MODE1_CHANNELS:
+        mode = 1
+    elif cid in TRIVIA_MODE2_CHANNELS:
+        mode = 2
+    else:
+        return await ctx.send("❌ This channel can't stop trivia.")
+
+    if not trivia_running.get(mode, False):
+        return await ctx.send(f"❌ Trivia isn’t running for mode {mode}.")
+
+    trivia_running[mode] = False
     if trivia_task:
         trivia_task.cancel()
-    await ctx.send("Trivia stopped. Until next time, Dreamers.")
+        trivia_task = None
+
+    await ctx.send(f"🛑 Trivia mode {mode} stopped. Until next time, Dreamers.")
 
 # b!triviatop to view top points
 @bot.command()
@@ -774,14 +787,12 @@ async def on_message(message: discord.Message):
 
     global answered, answerers, current_q, round_started_at
     if (
-        not trivia_running
-        or active_trivia_channel_id is None
-        or message.channel.id != active_trivia_channel_id
+        not any(trivia_running.values())
+        or message.channel.id not in active_trivia_channel_id.values()
         or message.author.bot
         or current_q is None
         or not message.channel.permissions_for(message.author).send_messages
-    ):
-        return
+    ): return
 
     content = message.content.lower().strip()
     if any(ans == content for ans in current_q["answers"]):
