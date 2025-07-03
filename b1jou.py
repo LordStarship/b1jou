@@ -16,9 +16,14 @@ db = firestore.client()
 
 # ✅ Allowed (guild_id, channel_id) pairs
 ALLOWED_CHANNELS = {
-    (1386929798831538248, 1387620244746534994),  # Cavern of Dreams, Prayers of the Wishful
-    (1386929798831538248, 1387653760175706172),  # Cavern of Dreams, bot-commands
-    (715855925285486682, 715855925285486685),    # LordStarship's Server, debugging
+    (1386929798831538248, 1387653760175706172),     # Cavern of Dreams, bot-commands
+    (1386929798831538248, 1390173770085437510),     # Cavern of Dreams, B1jou Center
+    (715855925285486682, 715855925285486685),       # LordStarship's Server, debugging
+}
+
+# Pray channel
+PRAY_CHANNELS = {
+    (1386929798831538248, 1387620244746534994),     # Cavern of Dreams, Prayers of the Wishful
 }
 
 # 🛠 Debugging channels for b!jou
@@ -94,7 +99,7 @@ IMAGE_URL = "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.
 # PRAY COMMAND
 @bot.command()
 async def pray(ctx, *args):
-    if ctx.guild and (ctx.guild.id, ctx.channel.id) not in ALLOWED_CHANNELS:
+    if ctx.guild and (ctx.guild.id, ctx.channel.id) not in PRAY_CHANNELS:
         return
 
     guild_id = str(ctx.guild.id) if ctx.guild else "DM"
