@@ -408,21 +408,14 @@ async def on_member_join(member):
         )
         
 # Trivia
-trivia_list: list[dict] = []
-trivia_task: asyncio.Task | None = None
-trivia_running = {
-    1: False,  # Classic
-    2: False   # Speedrun
-}
-current_q: dict | None = None
-answerers: dict = {}
-round_started_at = 0.0
-answered = False
-first_correct_event = asyncio.Event()
-active_trivia_channel_id = {
-    1: None,
-    2: None
-}
+trivia_lists = {1: [], 2: []}
+trivia_tasks = {1: None, 2: None}
+trivia_running_flags = {1: False, 2: False}
+current_q = {1: None, 2: None}
+answerers = {1: {}, 2: {}}
+round_started_at = {1: 0.0, 2: 0.0}
+answered_flags = {1: False, 2: False}
+first_correct_events = {1: asyncio.Event(), 2: asyncio.Event()}
 # Lock/Unlock Channel
 async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
     ow = chan.overwrites_for(chan.guild.default_role)
@@ -430,21 +423,20 @@ async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
     await chan.set_permissions(chan.guild.default_role, overwrite=ow)
 
 # Helper functions
-def load_trivia():
-    trivia_list.clear()
+def load_trivia(mode: int):
+    trivia_lists[mode].clear()
     path = pathlib.Path(TRIVIA_CSV)
     if not path.exists():
         raise FileNotFoundError(f"CSV not found: {path.resolve()}")
+
     with path.open(newline='', encoding='utf-8') as f:
         for row in csv.DictReader(f):
             q = row.get("question", "").strip()
             a = [x.strip().lower() for x in row.get("answers", "").split("|") if x.strip()]
             if q and a:
-                trivia_list.append({"q": q, "answers": a})
-    if not trivia_list:
-        raise RuntimeError("No trivia questions found in CSV!")
-    random.shuffle(trivia_list)
-    print(f"[TRIVIA] Loaded {len(trivia_list)} questions.")
+                trivia_lists[mode].append({"q": q, "answers": a})
+    random.shuffle(trivia_lists[mode])
+    print(f"[TRIVIA] Loaded {len(trivia_lists[mode])} questions for mode {mode}.")
 
 def load_trivia_data():
     p = pathlib.Path(TRIVIA_DATA_FILE)
@@ -462,31 +454,30 @@ def save_trivia_data(data: dict):
     tmp.replace(TRIVIA_DATA_FILE)
 
 # b!starttrivia 1
-async def trivia_loop(channel: discord.TextChannel):
-    global current_q, answerers, answered, round_started_at, trivia_running
+async def trivia_loop(channel: discord.TextChannel, mode: int):
     data = load_trivia_data()
 
     try:
-        while trivia_running:
-            if not trivia_list:
-                load_trivia()  # reload and reshuffle
+        while trivia_running_flags[mode]:
+            if not trivia_lists[mode]:
+                load_trivia(mode)
 
-            current_q = random.choice(trivia_list)
-            trivia_list.remove(current_q)
-            answerers.clear()
-            answered = False
-            first_correct_event.clear()
+            current_q[mode] = trivia_lists[mode].pop()
+            answerers[mode].clear()
+            answered_flags[mode] = False
+            first_correct_events[mode].clear()
             await _lock_channel(channel, allow_send=True)
 
-            embed = (discord.Embed(title="🌌 Spica's Trivia Challenge",
-                                   description=current_q["q"],
-                                   color=discord.Color.purple())
-                     .set_thumbnail(url=THUMBNAIL_URL))
-            question_msg  = await channel.send(embed=embed)
-            round_started_at = ((question_msg.id >> 22) + DISCORD_EPOCH)   
+            embed = discord.Embed(title="🌌 Spica's Trivia Challenge",
+                                  description=current_q[mode]["q"],
+                                  color=discord.Color.purple())
+            embed.set_thumbnail(url=THUMBNAIL_URL)
+            msg = await channel.send(embed=embed)
+
+            round_started_at[mode] = ((msg.id >> 22) + DISCORD_EPOCH)
 
             try:
-                await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC)
+                await asyncio.wait_for(first_correct_events[mode].wait(), timeout=QUIZ_LENGTH_SEC)
             except asyncio.TimeoutError:
                 await channel.send(embed=discord.Embed(
                     title="⏱️ Time’s Up!",
@@ -495,89 +486,68 @@ async def trivia_loop(channel: discord.TextChannel):
             else:
                 await asyncio.sleep(POST_ANSWER_WINDOW)
 
-                # Tally code
-                results = sorted(answerers.values(), key=lambda r: r['time_ms'])
-                lines   = []
+                results = sorted(answerers[mode].values(), key=lambda r: r['time_ms'])
+                lines = []
 
                 for res in results:
-                    uid        = str(res['user'].id)
-                    prev       = data.get(uid)
-
+                    uid = str(res['user'].id)
+                    prev = data.get(uid, {"score": 0, "best_time": float("inf"), "best_question": ""})
                     if isinstance(prev, int):
                         prev = {"score": prev, "best_time": float("inf"), "best_question": ""}
 
-                    prev = prev or {"score": 0, "best_time": float("inf"), "best_question": ""}
-
                     new_score = prev["score"] + res["points"]
+                    best_time = min(res["time_ms"], prev["best_time"])
+                    best_q = current_q[mode]["q"] if best_time == res["time_ms"] else prev["best_question"]
 
-                    if res["time_ms"] < prev["best_time"]:
-                        best_time     = res["time_ms"]
-                        best_question = current_q["q"]
-                    else:
-                        best_time     = prev["best_time"]
-                        best_question = prev["best_question"]
-
-                    data[uid] = {
-                        "score": new_score,
-                        "best_time": best_time,
-                        "best_question": best_question
-                    }
+                    data[uid] = {"score": new_score, "best_time": best_time, "best_question": best_q}
 
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
-                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
+                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
 
                 save_trivia_data(data)
-                # ─────────────
-
-                await channel.send(embed=discord.Embed(
-                    title="📜 Round Results",
-                    description="\n".join(lines),
-                    color=discord.Color.gold())
-                    .set_thumbnail(url=THUMBNAIL_URL))
+                await channel.send(embed=discord.Embed(title="📜 Round Results", description="\n".join(lines), color=discord.Color.gold()).set_thumbnail(url=THUMBNAIL_URL))
 
             await _lock_channel(channel, allow_send=False)
 
-            now_ms = ((discord.utils.time_snowflake(discord.utils.utcnow()) >> 22) + DISCORD_EPOCH)
-            elapsed_ms = now_ms - round_started_at
-            remaining_cooldown_ms = (INTER_ROUND_COOLDOWN * 1000) - elapsed_ms - (PRE_ANNOUNCE_SEC * 1000)
-            if remaining_cooldown_ms > 0:
-                await asyncio.sleep(remaining_cooldown_ms / 1000)
+            elapsed = ((discord.utils.time_snowflake(discord.utils.utcnow()) >> 22) + DISCORD_EPOCH) - round_started_at[mode]
+            remaining = (INTER_ROUND_COOLDOWN * 1000) - elapsed - (PRE_ANNOUNCE_SEC * 1000)
+            if remaining > 0:
+                await asyncio.sleep(remaining / 1000)
 
             await channel.send("✨ Trivia resumes in **5 seconds**…")
             await asyncio.sleep(PRE_ANNOUNCE_SEC)
     finally:
         await _lock_channel(channel, allow_send=True)
-        trivia_running = False
-        current_q = None
+        trivia_running_flags[mode] = False
+        current_q[mode] = None
 
 # b!starttrivia 2
-async def speedrun_trivia_loop(channel: discord.TextChannel):
-    global current_q, answerers, answered, round_started_at, trivia_running
+async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
     session_scores = {}
     questions_asked = 0
     data = load_trivia_data()
 
     try:
-        while trivia_running and questions_asked < 30:
-            if not trivia_list:
-                load_trivia()  # reload and reshuffle
+        while trivia_running_flags[mode] and questions_asked < 30:
+            if not trivia_lists[mode]:
+                load_trivia(mode)
 
-            current_q = random.choice(trivia_list)
-            trivia_list.remove(current_q)
-            answerers.clear()
-            answered = False
-            first_correct_event.clear()
+            current_q[mode] = trivia_lists[mode].pop()
+            answerers[mode].clear()
+            answered_flags[mode] = False
+            first_correct_events[mode].clear()
 
-            embed = (discord.Embed(title=f"Spica's Fast Trivia #{questions_asked+1}",
-                    description=current_q["q"],
-                    color=discord.Color.teal())
-                    .set_thumbnail(url=THUMBNAIL_URL))
+            embed = discord.Embed(
+                title=f"Spica's Fast Trivia #{questions_asked + 1}",
+                description=current_q[mode]["q"],
+                color=discord.Color.teal()
+            ).set_thumbnail(url=THUMBNAIL_URL)
 
-            question_msg  = await channel.send(embed=embed)
-            round_started_at = ((question_msg.id >> 22) + DISCORD_EPOCH)  
+            question_msg = await channel.send(embed=embed)
+            round_started_at[mode] = ((question_msg.id >> 22) + DISCORD_EPOCH)
 
             try:
-                await asyncio.wait_for(first_correct_event.wait(), timeout=QUIZ_LENGTH_SEC_LOOP)
+                await asyncio.wait_for(first_correct_events[mode].wait(), timeout=QUIZ_LENGTH_SEC_LOOP)
             except asyncio.TimeoutError:
                 await channel.send(embed=discord.Embed(
                     title="⏱️ Time’s Up!",
@@ -586,41 +556,27 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             else:
                 await asyncio.sleep(POST_ANSWER_WINDOW)
 
-                # ── tally section ──
-                results = sorted(answerers.values(), key=lambda r: r['time_ms'])
-                lines   = []
+                results = sorted(answerers[mode].values(), key=lambda r: r['time_ms'])
+                lines = []
 
                 for res in results:
-                    uid        = str(res['user'].id)
-                    session_scores[uid] = session_scores.get(uid, 0) + res['points']
-                    prev       = data.get(uid)
-
+                    uid = str(res['user'].id)
+                    session_scores[uid] = session_scores.get(uid, 0) + res["points"]
+                    prev = data.get(uid, {"score": 0, "best_time": float("inf"), "best_question": ""})
                     if isinstance(prev, int):
                         prev = {"score": prev, "best_time": float("inf"), "best_question": ""}
 
-                    prev = prev or {"score": 0, "best_time": float("inf"), "best_question": ""}
-
                     new_score = prev["score"] + res["points"]
+                    best_time = min(res["time_ms"], prev["best_time"])
+                    best_q = current_q[mode]["q"] if best_time == res["time_ms"] else prev["best_question"]
 
-                    if res["time_ms"] < prev["best_time"]:
-                        best_time     = res["time_ms"]
-                        best_question = current_q["q"]
-                    else:
-                        best_time     = prev["best_time"]
-                        best_question = prev["best_question"]
-
-                    data[uid] = {
-                        "score": new_score,
-                        "best_time": best_time,
-                        "best_question": best_question
-                    }
+                    data[uid] = {"score": new_score, "best_time": best_time, "best_question": best_q}
 
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
-                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
+                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
 
                 save_trivia_data(data)
-                # ─────────────
-                
+
                 await channel.send(embed=discord.Embed(
                     title="📜 Round Results",
                     description="\n".join(lines),
@@ -635,68 +591,62 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             for i, (uid, score) in enumerate(leaderboard, 1):
                 user = await bot.fetch_user(int(uid))
                 lines.append(f"**{i}.** {user.display_name} — `{score}` points")
+
             await channel.send(embed=discord.Embed(
                 title="🏁 Speedrun Leaderboard",
                 description="\n".join(lines),
-                color=discord.Color.green())
-                .set_thumbnail(url=THUMBNAIL_URL))
+                color=discord.Color.green()
+            ).set_thumbnail(url=THUMBNAIL_URL))
         else:
             await channel.send("No one scored any points this session.")
+
     finally:
-        trivia_running = False
-        current_q = None
+        trivia_running_flags[mode] = False
+        current_q[mode] = None
 
 # b!starttrivia main command
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def starttrivia(ctx, mode: int = 1):
-    global trivia_task, trivia_running, active_trivia_channel_id
+    if mode not in (1, 2):
+        return await ctx.send("❌ Invalid mode. Use 1 (Classic) or 2 (Speedrun).")
 
-    channel_id = ctx.channel.id
+    allowed_channels = TRIVIA_MODE1_CHANNELS if mode == 1 else TRIVIA_MODE2_CHANNELS
+    if ctx.channel.id not in allowed_channels:
+        return await ctx.send(f"❌ This channel is not allowed for mode {mode}.")
 
-    if mode == 1 and channel_id not in TRIVIA_MODE1_CHANNELS:
-        return await ctx.send("❌ This channel is not allowed for Classic Trivia.")
-    elif mode == 2 and channel_id not in TRIVIA_MODE2_CHANNELS:
-        return await ctx.send("❌ This channel is not allowed for Speedrun Trivia.")
+    if trivia_running_flags[mode]:
+        return await ctx.send(f"❗ Trivia mode {mode} is already running!")
 
-    if trivia_running[mode]:
-        return await ctx.send("❗ That mode is already running!")
+    load_trivia(mode)
+    trivia_running_flags[mode] = True
 
-    load_trivia()
-    trivia_running[mode] = True
-    active_trivia_channel_id[mode] = ctx.channel.id
-
-    if mode == 2:
-        trivia_task = asyncio.create_task(speedrun_trivia_loop(ctx.channel))
-        await ctx.send("💫 Speedrun Trivia started! 30 rapid-fire questions incoming!")
+    if mode == 1:
+        trivia_tasks[1] = asyncio.create_task(trivia_loop(ctx.channel, mode))
+        await ctx.send("🌠 Classic Trivia has begun!")
     else:
-        trivia_task = asyncio.create_task(trivia_loop(ctx.channel))
-        await ctx.send("🌠 Classic Trivia has begun! Answer wisely, Dreamers!")
+        trivia_tasks[2] = asyncio.create_task(speedrun_trivia_loop(ctx.channel, mode))
+        await ctx.send("💫 Speedrun Trivia started!")
         
 # b!stoptrivia to stop trivia command
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def stoptrivia(ctx):
-    global trivia_task, trivia_running
+async def stoptrivia(ctx, mode: int = 1):
+    if mode not in (1, 2):
+        return await ctx.send("❌ Invalid mode. Use 1 (Classic) or 2 (Speedrun).")
 
-    cid = ctx.channel.id
+    allowed_channels = TRIVIA_MODE1_CHANNELS if mode == 1 else TRIVIA_MODE2_CHANNELS
+    if ctx.channel.id not in allowed_channels:
+        return await ctx.send("❌ This channel can't stop that mode.")
 
-    if cid in TRIVIA_MODE1_CHANNELS:
-        mode = 1
-    elif cid in TRIVIA_MODE2_CHANNELS:
-        mode = 2
-    else:
-        return await ctx.send("❌ This channel can't stop trivia.")
+    if not trivia_running_flags[mode]:
+        return await ctx.send("Trivia for that mode isn’t running.")
 
-    if not trivia_running.get(mode, False):
-        return await ctx.send(f"❌ Trivia isn’t running for mode {mode}.")
+    trivia_running_flags[mode] = False
+    if trivia_tasks[mode]:
+        trivia_tasks[mode].cancel()
 
-    trivia_running[mode] = False
-    if trivia_task:
-        trivia_task.cancel()
-        trivia_task = None
-
-    await ctx.send(f"🛑 Trivia mode {mode} stopped. Until next time, Dreamers.")
+    await ctx.send(f"🛑 Trivia mode {mode} stopped.")
 
 # b!triviatop to view top points
 @bot.command()
@@ -785,34 +735,42 @@ async def triviastats(ctx, target_input: str = None):
 async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
-    global answered, answerers, current_q, round_started_at
-    if (
-        not any(trivia_running.values())
-        or message.channel.id not in active_trivia_channel_id.values()
-        or message.author.bot
-        or current_q is None
-        or not message.channel.permissions_for(message.author).send_messages
-    ): return
+    if message.author.bot or not message.content.strip():
+        return
 
     content = message.content.lower().strip()
-    if any(ans == content for ans in current_q["answers"]):
-        if message.author.id in answerers:
-            return
+    channel_id = message.channel.id
 
-        now_ms      = ((message.id >> 22) + DISCORD_EPOCH)   
-        delta_ms    = now_ms - round_started_at            
-        time_str    = f"{delta_ms//1000}.{delta_ms%1000:03d}s"
+    for mode in (1, 2):
+        if not trivia_running_flags[mode]:
+            continue
 
-        answerers[message.author.id] = {
-            "user":   message.author,
-            "points": 2 if not answered else 1,
-            "time_ms": delta_ms,
-            "formatted_time": time_str
-        }
+        # Check if message is in a valid channel for this mode
+        valid_channels = TRIVIA_MODE1_CHANNELS if mode == 1 else TRIVIA_MODE2_CHANNELS
+        if channel_id not in valid_channels:
+            continue
 
-        if not answered:
-            answered = True
-            first_correct_event.set()
+        if current_q[mode] is None or not message.channel.permissions_for(message.author).send_messages:
+            continue
+
+        # Check if answer is correct
+        if any(ans == content for ans in current_q[mode]["answers"]):
+            if message.author.id in answerers[mode]:
+                return  # Already answered
+
+            now_ms = ((message.id >> 22) + DISCORD_EPOCH)
+            delta = now_ms - round_started_at[mode]
+
+            answerers[mode][message.author.id] = {
+                "user": message.author,
+                "points": 2 if not answered_flags[mode] else 1,
+                "time_ms": delta,
+                "formatted_time": f"{delta // 1000}.{delta % 1000:03d}s"
+            }
+
+            if not answered_flags[mode]:
+                answered_flags[mode] = True
+                first_correct_events[mode].set()
 
 # Hourly backup, on trivia_data.json
 @tasks.loop(minutes=BACKUP_INTERVAL_MINUTES)
