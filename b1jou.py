@@ -299,9 +299,9 @@ async def jou(ctx, target: discord.Member | None = None):
     # ── Fun personalised line ──────────────────────────
     if not JOU_LINES:        # fallback if CSV empty / absent
         JOU_LINES.extend([
-            "{author} yeets a cosmic brick at {target}! Ouch!",
-            "{author} shares an existential meme with {target}.",
-            "{author} activates RGB powers against {target}!",
+            "**{author}** yeets a cosmic brick at **{target}**! Ouch!",
+            "**{author}** shares an existential meme with **{target}**.",
+            "**{author}** activates RGB powers against **{target}**!",
         ])
 
     line  = random.choice(JOU_LINES)
