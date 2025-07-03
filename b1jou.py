@@ -623,8 +623,6 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
             await asyncio.sleep(5)
             questions_asked += 1
 
-        await _lock_channel(channel, allow_send=False)
-
         if session_scores:
             leaderboard = sorted(session_scores.items(), key=lambda t: t[1], reverse=True)
             lines = []
