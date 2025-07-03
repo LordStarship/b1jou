@@ -416,6 +416,18 @@ answerers = {1: {}, 2: {}}
 round_started_at = {1: 0.0, 2: 0.0}
 answered_flags = {1: False, 2: False}
 first_correct_events = {1: asyncio.Event(), 2: asyncio.Event()}
+
+# FILE LOCK -> Prevents overwriting data
+FILE_LOCK = asyncio.Lock()
+
+async def safe_load_data() -> dict:
+    async with FILE_LOCK:
+        return load_trivia_data()
+
+async def safe_save_data(data: dict):
+    async with FILE_LOCK:
+        save_trivia_data(data)
+        
 # Lock/Unlock Channel
 async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
     ow = chan.overwrites_for(chan.guild.default_role)
@@ -455,7 +467,7 @@ def save_trivia_data(data: dict):
 
 # b!starttrivia 1
 async def trivia_loop(channel: discord.TextChannel, mode: int):
-    data = load_trivia_data()
+    data = await safe_load_data()
 
     try:
         while trivia_running_flags[mode]:
@@ -488,6 +500,7 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
 
                 results = sorted(answerers[mode].values(), key=lambda r: r['time_ms'])
                 lines = []
+                data = await safe_load_data()
 
                 for res in results:
                     uid = str(res['user'].id)
@@ -504,7 +517,8 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
 
-                save_trivia_data(data)
+                await safe_save_data(data)
+                await backup_trivia_to_channel()
                 await channel.send(embed=discord.Embed(title="📜 Round Results", description="\n".join(lines), color=discord.Color.gold()).set_thumbnail(url=THUMBNAIL_URL))
 
             await _lock_channel(channel, allow_send=False)
@@ -525,8 +539,7 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
 async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
     session_scores = {}
     questions_asked = 0
-    data = load_trivia_data()
-
+    data = await safe_load_data()
     try:
         while trivia_running_flags[mode] and questions_asked < 30:
             if not trivia_lists[mode]:
@@ -558,6 +571,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
 
                 results = sorted(answerers[mode].values(), key=lambda r: r['time_ms'])
                 lines = []
+                data = await safe_load_data()
 
                 for res in results:
                     uid = str(res['user'].id)
@@ -575,7 +589,8 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
 
-                save_trivia_data(data)
+                await safe_save_data(data)
+                await backup_trivia_to_channel()
 
                 await channel.send(embed=discord.Embed(
                     title="📜 Round Results",
@@ -651,7 +666,7 @@ async def stoptrivia(ctx, mode: int = 1):
 # b!triviatop to view top points
 @bot.command()
 async def triviatop(ctx):
-    data = load_trivia_data()
+    data = await safe_load_data()
     if not data:
         return await ctx.send("Nobody has scored yet!")
 
@@ -701,7 +716,7 @@ async def triviastats(ctx, target_input: str = None):
             return await ctx.send("❌ Couldn't find that user.")
         
     uid = str(target.id)
-    data = load_trivia_data()
+    data = await safe_load_data()
     stats = data.get(uid)
     footer_info = get_footer_info(ctx.guild)
 
@@ -776,20 +791,40 @@ async def on_message(message: discord.Message):
 @tasks.loop(minutes=BACKUP_INTERVAL_MINUTES)
 async def backup_trivia_data():
     try:
-        p = pathlib.Path(TRIVIA_DATA_FILE)
-        if not p.exists() or p.stat().st_size == 0:
-            return
-        channel = bot.get_channel(BACKUP_CHANNEL_ID)
-        if channel is None:
-            print("[BACKUP] backup channel not found")
-            return
-        ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
-        await channel.send(
-            content=f"🗂️ **Trivia backup – UTC {ts}**",
-            file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_backup_{ts}.json"))
-        print("[BACKUP] sent backup", ts)
+        async with FILE_LOCK:
+            p = pathlib.Path(TRIVIA_DATA_FILE)
+            if not p.exists() or p.stat().st_size == 0:
+                return
+            channel = bot.get_channel(BACKUP_CHANNEL_ID)
+            if channel is None:
+                print("[BACKUP] backup channel not found")
+                return
+            ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+            await channel.send(
+                content=f"🗂️ **Trivia backup – UTC {ts}**",
+                file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_backup_{ts}.json"))
+            print("[BACKUP] sent backup", ts)
     except Exception as e:
         print("[BACKUP] error:", e)
+        
+# auto backup after every trivia
+async def backup_trivia_to_channel():
+    try:
+        async with FILE_LOCK:
+            p = pathlib.Path(TRIVIA_DATA_FILE)
+            if not p.exists() or p.stat().st_size == 0:
+                return
+            channel = bot.get_channel(BACKUP_CHANNEL_ID)
+            if not channel:
+                print("[AUTO BACKUP] Channel not found")
+                return
+            ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+            await channel.send(
+                content=f"📦 **Auto Trivia Backup – UTC {ts}**",
+                file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_auto_{ts}.json"))
+            print(f"[AUTO BACKUP] Sent backup at {ts}")
+    except Exception as e:
+        print("[AUTO BACKUP ERROR]", e)
         
 # b!backuptrivia for manual backup
 @bot.command()
@@ -799,15 +834,16 @@ async def backuptrivia(ctx):
         return await ctx.send("This command can only be used in the backup channel.")
     
     try:
-        p = pathlib.Path(TRIVIA_DATA_FILE)
-        if not p.exists() or p.stat().st_size == 0:
-            return await ctx.send("⚠️ Trivia data file is empty or missing.")
-        
-        ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
-        await ctx.send(
-            content=f"🗂️ **Manual Trivia Backup – UTC {ts}**",
-            file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_backup_{ts}.json"))
-        print("[MANUAL BACKUP] Sent successfully")
+        async with FILE_LOCK:
+            p = pathlib.Path(TRIVIA_DATA_FILE)
+            if not p.exists() or p.stat().st_size == 0:
+                return await ctx.send("⚠️ Trivia data file is empty or missing.")
+
+            ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+            await ctx.send(
+                content=f"🗂️ **Manual Trivia Backup – UTC {ts}**",
+                file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_backup_{ts}.json"))
+            print("[MANUAL BACKUP] Sent successfully")
     
     except Exception as e:
         print("[MANUAL BACKUP] Error:", e)
