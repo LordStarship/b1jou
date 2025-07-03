@@ -416,6 +416,7 @@ answerers: dict = {}
 round_started_at = 0.0
 answered = False
 first_correct_event = asyncio.Event()
+active_trivia_channel_id: int | None = None   
 
 # Lock/Unlock Channel
 async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
@@ -644,7 +645,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def starttrivia(ctx, mode: int = 1):
-    global trivia_task, trivia_running
+    global trivia_task, trivia_running, active_trivia_channel_id
     channel_id = ctx.channel.id
 
     # Validate channel for each mode
@@ -658,6 +659,7 @@ async def starttrivia(ctx, mode: int = 1):
 
     load_trivia()
     trivia_running = True
+    active_trivia_channel_id = ctx.channel.id
 
     if mode == 2:
         trivia_task = asyncio.create_task(speedrun_trivia_loop(ctx.channel))
@@ -670,7 +672,7 @@ async def starttrivia(ctx, mode: int = 1):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def stoptrivia(ctx):
-    global trivia_task, trivia_running
+    global trivia_task, trivia_running, active_trivia_channel_id
     if ctx.channel.id not in (TRIVIA_MODE1_CHANNELS | TRIVIA_MODE2_CHANNELS):
         return await ctx.send("This channel can't stop trivia.")
     
@@ -678,6 +680,7 @@ async def stoptrivia(ctx):
         return await ctx.send("Trivia isn’t running.")
 
     trivia_running = False
+    active_trivia_channel_id = None
     if trivia_task:
         trivia_task.cancel()
     await ctx.send("Trivia stopped. Until next time, Dreamers.")
@@ -770,10 +773,14 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
     global answered, answerers, current_q, round_started_at
-    if (message.channel.id != TRIVIA_MODE1_CHANNELS or message.channel.id != TRIVIA_MODE2_CHANNELS
-            or message.author.bot
-            or current_q is None
-            or not message.channel.permissions_for(message.author).send_messages):
+    if (
+        not trivia_running
+        or active_trivia_channel_id is None
+        or message.channel.id != active_trivia_channel_id
+        or message.author.bot
+        or current_q is None
+        or not message.channel.permissions_for(message.author).send_messages
+    ):
         return
 
     content = message.content.lower().strip()
