@@ -1,11 +1,11 @@
 {
   "391729605230329859": {
-    "score": 179,
+    "score": 247,
     "best_time": 1722,
     "best_question": "Which VTuber's adorable catchphrase is 'yoho'?"
   },
   "423805323653152778": {
-    "score": 617,
+    "score": 627,
     "best_time": 860,
     "best_question": "How many eyes does a bee have?"
   },
@@ -15,7 +15,7 @@
     "best_question": "How many legs does a bee have?"
   },
   "674867606108241920": {
-    "score": 150,
+    "score": 193,
     "best_time": 2041,
     "best_question": "How many oceans are in the Earth?"
   },
@@ -35,13 +35,18 @@
     "best_question": "How many days are in a week?"
   },
   "375759240171618305": {
-    "score": 300,
+    "score": 383,
     "best_time": 1303,
     "best_question": "How many eyes does a bee have?"
   },
   "1191128088029966399": {
     "score": 23,
     "best_time": 1583,
+    "best_question": "How many oceans are in the Earth?"
+  },
+  "1021417830320709652": {
+    "score": 13,
+    "best_time": 2179,
     "best_question": "How many oceans are in the Earth?"
   }
 }
