@@ -31,7 +31,6 @@ DEBUG_CHANNELS = {
 DISCORD_EPOCH = 1420070400000               # discord snowflake
 TRIVIA_CSV = 'trivia_sheet.csv'             # trivia question file
 TRIVIA_DATA_FILE = 'trivia_data.json'       # trivia data file
-TRIVIA_CHANNEL_ID = 1387653760175706172     # channel to send trivia
 QUIZ_LENGTH_SEC      = 270                  # 4m 30s players can answer
 QUIZ_LENGTH_SEC_LOOP = 30                   # 30s for fast trivia
 POST_ANSWER_WINDOW   = 3                    # window that stays open after 1st correct
@@ -773,7 +772,7 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
     global answered, answerers, current_q, round_started_at
-    if (message.channel.id != TRIVIA_CHANNEL_ID
+    if (message.channel.id != TRIVIA_MODE1_CHANNELS or message.channel.id != TRIVIA_MODE2_CHANNELS
             or message.author.bot
             or current_q is None
             or not message.channel.permissions_for(message.author).send_messages):
