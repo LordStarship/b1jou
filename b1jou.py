@@ -2,8 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import ui, Interaction
 import os, json, random, csv, time, asyncio, pathlib
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
 import firebase_admin
@@ -681,7 +680,7 @@ async def triviatop(ctx):
         for uid, stats in data.items()
     }
 
-    top5 = sorted(valid_data.items(), key=lambda t: t[1].get("score", 0), reverse=True)[:5]
+    top5 = sorted(valid_data.items(), key=lambda t: t[1].get("score", 0), reverse=True)[:10]
     lines = []
     footer_info = get_footer_info(ctx.guild)
 

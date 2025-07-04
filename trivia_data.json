@@ -1,12 +1,12 @@
 {
   "391729605230329859": {
-    "score": 280,
-    "best_time": 1722,
-    "best_question": "Which VTuber's adorable catchphrase is 'yoho'?"
+    "score": 528,
+    "best_time": 1464,
+    "best_question": "How many eyes does a bee have?"
   },
   "423805323653152778": {
-    "score": 727,
-    "best_time": 860,
+    "score": 1147,
+    "best_time": 740,
     "best_question": "How many eyes does a bee have?"
   },
   "912948455545126913": {
@@ -15,7 +15,7 @@
     "best_question": "How many legs does a bee have?"
   },
   "674867606108241920": {
-    "score": 228,
+    "score": 308,
     "best_time": 2041,
     "best_question": "How many oceans are in the Earth?"
   },
@@ -25,28 +25,68 @@
     "best_question": "What is the special currency used to summon characters in Genshin Impact called?"
   },
   "1012134108178157629": {
-    "score": 2,
-    "best_time": 4930,
-    "best_question": "What is the Earth's outermost layer called?"
+    "score": 130,
+    "best_time": 2198,
+    "best_question": "A leap year happens once every how many years?"
   },
   "564500471256055822": {
-    "score": 38,
-    "best_time": 2678,
+    "score": 54,
+    "best_time": 2084,
     "best_question": "How many days are in a week?"
   },
   "375759240171618305": {
-    "score": 409,
+    "score": 977,
     "best_time": 1303,
     "best_question": "How many eyes does a bee have?"
   },
   "1191128088029966399": {
-    "score": 23,
+    "score": 138,
     "best_time": 1583,
     "best_question": "How many oceans are in the Earth?"
   },
   "1021417830320709652": {
-    "score": 13,
-    "best_time": 2179,
-    "best_question": "How many oceans are in the Earth?"
+    "score": 197,
+    "best_time": 1529,
+    "best_question": "How many eyes does a bee have?"
+  },
+  "839526735595044924": {
+    "score": 198,
+    "best_time": 2099,
+    "best_question": "How many days are in a week?"
+  },
+  "548642076703588373": {
+    "score": 14,
+    "best_time": 796,
+    "best_question": "What is the fear of long words?"
+  },
+  "951001787358384168": {
+    "score": 70,
+    "best_time": 2600,
+    "best_question": "In Battle Cats, what is the name of the first unit you receive in the game?"
+  },
+  "890042996693827584": {
+    "score": 2,
+    "best_time": 94305,
+    "best_question": "What is the name of the only US president who served 3 terms in office?"
+  },
+  "772765211286831116": {
+    "score": 2,
+    "best_time": 197232,
+    "best_question": "What is the name of the largest country in area?"
+  },
+  "667888624058105866": {
+    "score": 100,
+    "best_time": 2762,
+    "best_question": "In Battle Cats, what is the name of the first unit you receive in the game?"
+  },
+  "832245483828674600": {
+    "score": 4,
+    "best_time": 115455,
+    "best_question": "What is the special currency used to summon characters in Genshin Impact called?"
+  },
+  "320159499392516106": {
+    "score": 4,
+    "best_time": 168137,
+    "best_question": "What type of scale measures how basic or acidic a solution is?"
   }
 }
