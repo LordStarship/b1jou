@@ -1,21 +1,21 @@
 {
   "391729605230329859": {
-    "score": 528,
+    "score": 787,
     "best_time": 1464,
     "best_question": "How many eyes does a bee have?"
   },
   "423805323653152778": {
-    "score": 1147,
+    "score": 1444,
     "best_time": 740,
     "best_question": "How many eyes does a bee have?"
   },
   "912948455545126913": {
-    "score": 145,
+    "score": 169,
     "best_time": 1567,
     "best_question": "How many legs does a bee have?"
   },
   "674867606108241920": {
-    "score": 308,
+    "score": 360,
     "best_time": 2041,
     "best_question": "How many oceans are in the Earth?"
   },
@@ -25,32 +25,32 @@
     "best_question": "What is the special currency used to summon characters in Genshin Impact called?"
   },
   "1012134108178157629": {
-    "score": 130,
+    "score": 210,
     "best_time": 2198,
     "best_question": "A leap year happens once every how many years?"
   },
   "564500471256055822": {
-    "score": 54,
+    "score": 58,
     "best_time": 2084,
     "best_question": "How many days are in a week?"
   },
   "375759240171618305": {
-    "score": 977,
+    "score": 1171,
     "best_time": 1303,
     "best_question": "How many eyes does a bee have?"
   },
   "1191128088029966399": {
-    "score": 138,
+    "score": 172,
     "best_time": 1583,
     "best_question": "How many oceans are in the Earth?"
   },
   "1021417830320709652": {
-    "score": 197,
+    "score": 418,
     "best_time": 1529,
     "best_question": "How many eyes does a bee have?"
   },
   "839526735595044924": {
-    "score": 198,
+    "score": 397,
     "best_time": 2099,
     "best_question": "How many days are in a week?"
   },
@@ -75,18 +75,23 @@
     "best_question": "What is the name of the largest country in area?"
   },
   "667888624058105866": {
-    "score": 100,
-    "best_time": 2762,
-    "best_question": "In Battle Cats, what is the name of the first unit you receive in the game?"
+    "score": 140,
+    "best_time": 2598,
+    "best_question": "What is the currency in Roblox called?"
   },
   "832245483828674600": {
-    "score": 4,
-    "best_time": 115455,
-    "best_question": "What is the special currency used to summon characters in Genshin Impact called?"
+    "score": 8,
+    "best_time": 21199,
+    "best_question": "In what country is the Eiffel Tower located in?"
   },
   "320159499392516106": {
     "score": 4,
     "best_time": 168137,
     "best_question": "What type of scale measures how basic or acidic a solution is?"
+  },
+  "1215766628697116882": {
+    "score": 2,
+    "best_time": 179068,
+    "best_question": "What is the name of the company that made huge-hit gacha games like Zenless Zone Zero, Genshin Impact, and Honkai: Star Rail?"
   }
 }

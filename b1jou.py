@@ -7,6 +7,7 @@ from flask import Flask
 from threading import Thread
 import firebase_admin
 from firebase_admin import credentials, firestore
+import unicodedata
 
 cred_json = os.environ['FIREBASE_CREDENTIALS_JSON']
 cred = credentials.Certificate(json.loads(cred_json))
@@ -438,6 +439,10 @@ async def _lock_channel(chan: discord.TextChannel, *, allow_send: bool):
     ow.send_messages = allow_send
     await chan.set_permissions(chan.guild.default_role, overwrite=ow)
 
+# Normalize answer so it can accepts Unicode
+def normalize_text(text):
+    return unicodedata.normalize("NFKC", text).replace("’", "'").lower().strip()
+
 # Helper functions
 def load_trivia(mode: int):
     trivia_lists[mode].clear()
@@ -448,7 +453,7 @@ def load_trivia(mode: int):
     with path.open(newline='', encoding='utf-8') as f:
         for row in csv.DictReader(f):
             q = row.get("question", "").strip()
-            a = [x.strip().lower() for x in row.get("answers", "").split("|") if x.strip()]
+            a = [normalize_text(x) for x in row.get("answers", "").split("|") if x.strip()]
             if q and a:
                 trivia_lists[mode].append({"q": q, "answers": a})
     random.shuffle(trivia_lists[mode])
@@ -757,7 +762,8 @@ async def on_message(message: discord.Message):
     if message.author.bot or not message.content.strip():
         return
 
-    content = message.content.lower().strip()
+    content = message.content.strip()
+    normalized_content = normalize_text(content)
     channel_id = message.channel.id
 
     for mode in (1, 2):
@@ -773,7 +779,7 @@ async def on_message(message: discord.Message):
             continue
 
         # Check if answer is correct
-        if any(ans == content for ans in current_q[mode]["answers"]):
+        if any(ans == normalized_content for ans in current_q[mode]["answers"]):
             if message.author.id in answerers[mode]:
                 return  # Already answered
 
