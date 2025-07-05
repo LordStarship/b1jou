@@ -547,6 +547,8 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
 # b!starttrivia 2
 async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
     session_scores = {}
+    session_times = {} 
+    session_words = {} 
     questions_asked = 0
     data = await safe_load_data()
     try:
@@ -585,15 +587,41 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
                 for res in results:
                     uid = str(res['user'].id)
                     session_scores[uid] = session_scores.get(uid, 0) + res["points"]
+                    session_times[uid] = session_times.get(uid, 0) + res["time_ms"]
+                    session_words[uid] = session_words.get(uid, 0) + len(res['content'].split())
+
                     prev = data.get(uid, {"score": 0, "best_time": float("inf"), "best_question": ""})
                     if isinstance(prev, int):
                         prev = {"score": prev, "best_time": float("inf"), "best_question": ""}
 
                     new_score = prev["score"] + res["points"]
                     best_time = min(res["time_ms"], prev["best_time"])
-                    best_q = current_q[mode]["q"] if best_time == res["time_ms"] else prev["best_question"]
+                    best_q = current_q[mode]["q"] if best_time == res["time_ms"] else prev.get("best_question", "")
 
-                    data[uid] = {"score": new_score, "best_time": best_time, "best_question": best_q}
+                    # Save current averages
+                    rounds = questions_asked + 1
+                    avg_time = session_times[uid] // rounds
+                    wpm = int((session_words[uid] / (session_times[uid] / 1000)) * 60) if session_times[uid] > 0 else 0
+
+                    # Check if new bests
+                    best_avg = prev.get("best_avg_time", float("inf"))
+                    best_wpm = prev.get("best_wpm", 0)
+                    date_now = datetime.utcnow().strftime("%d %B, %Y")
+
+                    if avg_time < best_avg:
+                        prev["best_avg_time"] = avg_time
+                        prev["best_avg_date"] = date_now
+
+                    if wpm > best_wpm:
+                        prev["best_wpm"] = wpm
+                        prev["best_wpm_date"] = date_now
+
+                    data[uid] = {
+                        **prev,
+                        "score": new_score,
+                        "best_time": best_time,
+                        "best_question": best_q,
+                    }
 
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
@@ -615,7 +643,21 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
             for i, (uid, score) in enumerate(leaderboard, 1):
                 user = await bot.fetch_user(int(uid))
                 lines.append(f"**{i}.** {user.display_name} — `{score}` points")
-
+                
+            stats_lines = []
+            for uid, total_time in session_times.items():
+                rounds = questions_asked
+                avg_time = total_time // rounds
+                wpm = int((session_words[uid] / (total_time / 1000)) * 60) if total_time > 0 else 0
+                user = await bot.fetch_user(int(uid))
+                stats_lines.append(f"**{user.display_name}** — Avg: `{avg_time}ms`, WPM: `{wpm}`")
+            
+            await channel.send(embed=discord.Embed(
+                title="⏱️ Session Stats",
+                description="\n".join(stats_lines),
+                color=discord.Color.orange()
+            ))
+            
             await channel.send(embed=discord.Embed(
                 title="🏁 Speedrun Leaderboard",
                 description="\n".join(lines),
@@ -690,15 +732,29 @@ async def triviatop(ctx):
     footer_info = get_footer_info(ctx.guild)
 
     for i, (uid, stats) in enumerate(top5, 1):
-        user = await bot.fetch_user(int(uid))
-        score = stats.get("score", 0)
-        best_time = stats.get("best_time")
-        question = stats.get("best_question", "–")
-        time_str = f"{best_time // 1000}.{best_time % 1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
+        user       = await bot.fetch_user(int(uid))
+        score      = stats.get("score", 0)
+    
+        best_time  = stats.get("best_time")
+        best_q     = stats.get("best_question", "–")
+        best_time_str = (
+            f"{best_time//1000}.{best_time%1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
+        )
+
+        best_avg   = stats.get("best_avg_time")
+        best_avg_str = (
+            f"{best_avg//1000}.{best_avg%1000:03d}s" if isinstance(best_avg, (int, float)) else "N/A"
+        )
+        best_avg_date = stats.get("best_avg_date", "–")
+
+        best_wpm   = stats.get("best_wpm", "N/A")
+        best_wpm_date = stats.get("best_wpm_date", "–")
 
         lines.append(
-            f"**{i}. {user.display_name}** Total Points: `{score}` pts\n"
-            f"PB: `{time_str}` on *{question}*"
+            f"**{i}. {user.display_name}** — `{score}` pts\n"
+            f"• PB: `{best_time_str}` on *{best_q}*\n"
+            f"• Best Avg: `{best_avg_str}` (*{best_avg_date}*)\n"
+            f"• Best WPM: `{best_wpm}` (*{best_wpm_date}*)"
         )
 
     await ctx.send(embed=discord.Embed(
@@ -740,6 +796,12 @@ async def triviastats(ctx, target_input: str = None):
     best_time = stats.get("best_time")
     question = stats.get("best_question", "–")
     time_str = f"{best_time // 1000}.{best_time % 1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
+    best_avg = stats.get("best_avg_time")
+    best_avg_date = stats.get("best_avg_date", "–")
+    best_wpm = stats.get("best_wpm")
+    best_wpm_date = stats.get("best_wpm_date", "–")
+    
+    avg_str = f"{best_avg // 1000}.{best_avg % 1000:03d}s" if best_avg else "N/A"
 
     embed = discord.Embed(
         title=f"📊 Trivia Stats – {target.display_name}",
@@ -747,6 +809,8 @@ async def triviastats(ctx, target_input: str = None):
             f"**Total Score:** `{score}` pts\n"
             f"**Fastest Answer:** `{time_str}`\n"
             f"**Best Question:** *{question}*"
+            f"**Best Avg Time:** `{avg_str}` on *{best_avg_date}*\n"
+            f"**Best WPM:** `{best_wpm}` on *{best_wpm_date}*"
         ),
         color=discord.Color.gold()
     )
@@ -790,7 +854,8 @@ async def on_message(message: discord.Message):
                 "user": message.author,
                 "points": 2 if not answered_flags[mode] else 1,
                 "time_ms": delta,
-                "formatted_time": f"{delta // 1000}.{delta % 1000:03d}s"
+                "formatted_time": f"{delta // 1000}.{delta % 1000:03d}s",
+                "content": content
             }
 
             if not answered_flags[mode]:
