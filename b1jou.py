@@ -877,8 +877,8 @@ async def triviashop(ctx):
     await ctx.send(embed=embed)
 
 # b!buyrole to buy role using points
-@bot.command()
-async def buyrole(ctx, *, role: discord.Role = None):
+@bot.command(name="buy", aliases=["buyrole"])
+async def buy_role(ctx, *, alias: str = None):
     if not alias:
         return await ctx.send("Usage: `b!buy spica`")
 
@@ -914,7 +914,7 @@ async def buyrole(ctx, *, role: discord.Role = None):
         await change_user_score(uid, cost)
         return await ctx.send("❌ Couldn't assign the role (permissions issue). Refunded your points.")
     
-    await ctx.send(f"✅ {ctx.author.name} has purchased {role.mention}!")
+    await ctx.send(f"✅ You bought {role.mention} for **{cost} pts**.")
 
 # Listener function for answer
 @bot.event
