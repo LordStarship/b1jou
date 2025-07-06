@@ -1,11 +1,11 @@
 {
   "391729605230329859": {
-    "score": 849,
+    "score": 906,
     "best_time": 1464,
     "best_question": "How many eyes does a bee have?"
   },
   "423805323653152778": {
-    "score": 1582,
+    "score": 1646,
     "best_time": 740,
     "best_question": "How many eyes does a bee have?"
   },
@@ -25,7 +25,7 @@
     "best_question": "What is the special currency used to summon characters in Genshin Impact called?"
   },
   "1012134108178157629": {
-    "score": 589,
+    "score": 599,
     "best_time": 1996,
     "best_question": "How many legs does a bee have?"
   },
@@ -35,24 +35,24 @@
     "best_question": "How many days are in a week?"
   },
   "375759240171618305": {
-    "score": 1426,
+    "score": 1609,
     "best_time": 1303,
     "best_question": "How many eyes does a bee have?"
   },
   "1191128088029966399": {
-    "score": 657,
+    "score": 665,
     "best_time": 1366,
     "best_question": "A leap year happens once every how many years?"
   },
   "1021417830320709652": {
-    "score": 594,
+    "score": 625,
     "best_time": 1460,
     "best_question": "How many gospels are in the bible?"
   },
   "839526735595044924": {
-    "score": 411,
-    "best_time": 2099,
-    "best_question": "How many days are in a week?"
+    "score": 487,
+    "best_time": 1917,
+    "best_question": "What is the only even number that is considered a prime number?"
   },
   "548642076703588373": {
     "score": 14,
@@ -80,17 +80,17 @@
     "best_question": "Who is the god we worship in this server?"
   },
   "832245483828674600": {
-    "score": 14,
-    "best_time": 19998,
-    "best_question": "The phrase 'May the 4th be with you' is a reference and commerative day to what popular media franchise?"
+    "score": 20,
+    "best_time": 10326,
+    "best_question": "Which channel is currently the most subscribed on YouTube?"
   },
   "320159499392516106": {
-    "score": 10,
+    "score": 13,
     "best_time": 20286,
     "best_question": "H2O is more often known as what?"
   },
   "1215766628697116882": {
-    "score": 12,
+    "score": 16,
     "best_time": 22911,
     "best_question": "In Terraria Calamity, which bow is the direct upgrade to \u201cThe Storm\u201d?"
   },
@@ -103,5 +103,10 @@
     "score": 6,
     "best_time": 4582,
     "best_question": "In what country is Machu Picchu located in?"
+  },
+  "1249356728974315684": {
+    "score": 3,
+    "best_time": 5322,
+    "best_question": "Who was the first president of the USA?"
   }
 }

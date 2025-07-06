@@ -62,6 +62,16 @@ TRIVIA_MODE2_CHANNELS = {
     # Add more channel IDs for Mode 2 here
 }
 
+# ─── Special “ME / Mention” answers ────────────────────────────────
+# key   : normalized correct answer text in your CSV
+# value : the Discord user‑id of the person who may say "me"
+SPECIAL_SELF_ANSWERS = {
+    "quartz": 588199406604517404,
+    "hydra": 1249356728974315684,
+    "lordstarship": 391729605230329859,
+    "stella": 423805323653152778,
+}
+
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
@@ -473,6 +483,27 @@ def save_trivia_data(data: dict):
     tmp = pathlib.Path(TRIVIA_DATA_FILE + ".tmp")
     tmp.write_text(json.dumps(data, indent=2))
     tmp.replace(TRIVIA_DATA_FILE)
+
+def is_correct_answer(answers: list, message: discord.Message):
+    normalized_answers = [normalize_text(ans) for ans in answers]
+    content = message.content.strip()
+    normalized = normalize_text(content)
+
+    if normalized in normalized_answers:
+        return True
+
+    # Special case: if the answer is a username or mention
+    for ans in normalized_answers:
+        # Check if answer matches a member's display name or ID
+        for member in message.guild.members:
+            if normalize_text(member.display_name) == ans:
+                # Match "@user" mention
+                if message.content.strip() == member.mention:
+                    return True
+                # Match "me" if the user answering is the correct one
+                if message.author.id == member.id and normalized == "me":
+                    return True
+    return False
     
 # Shop helper functions
 ROLE_SHOP_FILE = "role_shop.json"
@@ -922,8 +953,6 @@ async def on_message(message: discord.Message):
     if message.author.bot or not message.content.strip():
         return
 
-    content = message.content.strip()
-    normalized_content = normalize_text(content)
     channel_id = message.channel.id
 
     for mode in (1, 2):
@@ -939,7 +968,7 @@ async def on_message(message: discord.Message):
             continue
 
         # Check if answer is correct
-        if any(ans == normalized_content for ans in current_q[mode]["answers"]):
+        if is_correct_answer(current_q[mode]["answers"], message):
             if message.author.id in answerers[mode]:
                 return  # Already answered
 
