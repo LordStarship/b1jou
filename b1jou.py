@@ -473,6 +473,46 @@ def save_trivia_data(data: dict):
     tmp = pathlib.Path(TRIVIA_DATA_FILE + ".tmp")
     tmp.write_text(json.dumps(data, indent=2))
     tmp.replace(TRIVIA_DATA_FILE)
+    
+# Shop helper functions
+ROLE_SHOP_FILE = "role_shop.json"
+ROLE_SHOP: dict[int, int] = {}          
+
+def load_role_shop() -> None:
+    global ROLE_SHOP
+    p = pathlib.Path(ROLE_SHOP_FILE)
+    if not p.exists():
+        print(f"[SHOP] '{ROLE_SHOP_FILE}' not found – shop disabled.")
+        ROLE_SHOP.clear()
+        return
+    try:
+        raw = json.loads(p.read_text())
+        # convert keys to int
+        ROLE_SHOP = {int(rid): int(cost) for rid, cost in raw.items() if str(cost).isdigit()}
+        print(f"[SHOP] Loaded {len(ROLE_SHOP)} purchasable roles.")
+    except Exception as e:
+        print("[SHOP] failed loading:", e)
+        ROLE_SHOP.clear()
+
+async def get_user_score(uid: str) -> int:
+    data = await safe_load_data()
+    entry = data.get(uid)
+    if isinstance(entry, dict):
+        return entry.get("score", 0)
+    return int(entry or 0)
+
+async def change_user_score(uid: str, delta: int):
+    """delta can be negative to deduct"""
+    async with FILE_LOCK:
+        data = load_trivia_data()
+        entry = data.get(uid)
+        if isinstance(entry, dict):
+            entry["score"] = max(0, entry.get("score", 0) + delta)
+        else:  # legacy int or None
+            entry = {"score": max(0, (int(entry or 0) + delta)),
+                     "best_time": float("inf"), "best_question": ""}
+        data[uid] = entry
+        save_trivia_data(data)
 
 # b!starttrivia 1
 async def trivia_loop(channel: discord.TextChannel, mode: int):
@@ -754,6 +794,97 @@ async def triviastats(ctx, target_input: str = None):
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
     await ctx.send(embed=embed)
 
+# ──── Trivia Role‑Shop helpers ─────────────────────────────────────
+ROLE_SHOP_FILE = "role_shop.json"
+ROLE_SHOP: dict[int, int] = {}          # role‑id ➜ cost
+
+def load_role_shop() -> None:
+    global ROLE_SHOP
+    p = pathlib.Path(ROLE_SHOP_FILE)
+    if not p.exists():
+        print(f"[SHOP] '{ROLE_SHOP_FILE}' not found – shop disabled.")
+        ROLE_SHOP.clear()
+        return
+    try:
+        raw = json.loads(p.read_text())
+        # convert keys to int
+        ROLE_SHOP = {int(rid): int(cost) for rid, cost in raw.items() if str(cost).isdigit()}
+        print(f"[SHOP] Loaded {len(ROLE_SHOP)} purchasable roles.")
+    except Exception as e:
+        print("[SHOP] failed loading:", e)
+        ROLE_SHOP.clear()
+
+async def get_user_score(uid: str) -> int:
+    data = await safe_load_data()
+    entry = data.get(uid)
+    if isinstance(entry, dict):
+        return entry.get("score", 0)
+    return int(entry or 0)
+
+async def change_user_score(uid: str, delta: int):
+    """delta can be negative to deduct"""
+    async with FILE_LOCK:
+        data = load_trivia_data()
+        entry = data.get(uid)
+        if isinstance(entry, dict):
+            entry["score"] = max(0, entry.get("score", 0) + delta)
+        else:  # legacy int or None
+            entry = {"score": max(0, (int(entry or 0) + delta)),
+                     "best_time": float("inf"), "best_question": ""}
+        data[uid] = entry
+        save_trivia_data(data)
+
+# b!triviashop to buy roles
+@bot.command()
+async def triviashop(ctx):
+    if not ROLE_SHOP:
+        return await ctx.send("🛒 The shop is empty right now.")
+    lines = []
+    for rid, cost in ROLE_SHOP.items():
+        role = ctx.guild.get_role(rid)
+        if role:
+            lines.append(f"{role.mention} — **{cost} pts**")
+    if not lines:
+        return await ctx.send("🛒 No valid roles configured for this server.")
+    await ctx.send(embed=discord.Embed(
+        title="🛒 Trivia Role Shop",
+        description="\n".join(lines),
+        color=discord.Color.gold()))
+
+# b!buyrole to buy role using points
+@bot.command()
+async def buyrole(ctx, *, role: discord.Role = None):
+    if role is None:
+        return await ctx.send("Usage: `b!buyrole @Role`")
+
+    cost = ROLE_SHOP.get(role.id)
+    if cost is None:
+        return await ctx.send("❌ That role isn’t for sale.")
+
+    # already has it?
+    if role in ctx.author.roles:
+        return await ctx.send("You already have that role!")
+
+    # bot permission / hierarchy check
+    if ctx.guild.me.top_role <= role:
+        return await ctx.send("❌ I’m not high enough in the role hierarchy to give that role.")
+
+    uid = str(ctx.author.id)
+    current_score = await get_user_score(uid)
+    if current_score < cost:
+        return await ctx.send(f"❌ You need **{cost} pts**, but you only have **{current_score} pts**.")
+
+    # all good – deduct & assign
+    await change_user_score(uid, -cost)
+    try:
+        await ctx.author.add_roles(role, reason="Purchased via trivia shop")
+    except discord.Forbidden:
+        # refund on failure
+        await change_user_score(uid, cost)
+        return await ctx.send("❌ I couldn’t add the role (missing permissions). No points were taken.")
+    
+    await ctx.send(f"✅ Congratulations {ctx.author.name}! You bought {role.mention} for **{cost} pts**.")
+
 # Listener function for answer
 @bot.event
 async def on_message(message: discord.Message):
@@ -1002,6 +1133,7 @@ async def help(ctx):
 @bot.event
 async def on_ready():
     await bot.wait_until_ready()
+    load_role_shop()
     load_jou_lines()
     load_spica_lines()      
     if not backup_trivia_data.is_running():
