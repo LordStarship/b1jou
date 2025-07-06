@@ -814,6 +814,25 @@ def load_role_shop() -> None:
         print("[SHOP] failed loading:", e)
         ROLE_SHOP.clear()
 
+ROLE_ALIASES_FILE = "role_aliases.json"
+ROLE_ALIASES: dict[str, int] = {}   # alias ➜ role ID
+
+def load_role_aliases():
+    global ROLE_ALIASES
+    p = pathlib.Path(ROLE_ALIASES_FILE)
+    if not p.exists():
+        print("[SHOP] role_aliases.json not found")
+        ROLE_ALIASES.clear()
+        return
+    try:
+        raw = json.loads(p.read_text())
+        # lowercase all aliases, convert IDs to int
+        ROLE_ALIASES = {alias.lower(): int(rid) for alias, rid in raw.items()}
+        print(f"[SHOP] Loaded {len(ROLE_ALIASES)} role aliases.")
+    except Exception as e:
+        print("[SHOP] Failed to load aliases:", e)
+        ROLE_ALIASES.clear()
+
 async def get_user_score(uid: str) -> int:
     data = await safe_load_data()
     entry = data.get(uid)
@@ -835,37 +854,50 @@ async def change_user_score(uid: str, delta: int):
         save_trivia_data(data)
 
 # b!triviashop to buy roles
-@bot.command()
+@bot.command(name="triviashop", aliases=["shop"])
 async def triviashop(ctx):
-    if not ROLE_SHOP:
-        return await ctx.send("🛒 The shop is empty right now.")
+    if not ROLE_SHOP or not ROLE_ALIASES:
+        return await ctx.send("🛒 The Spica Shop is empty right now. Maybe later... ✨")
+
     lines = []
-    for rid, cost in ROLE_SHOP.items():
-        role = ctx.guild.get_role(rid)
-        if role:
-            lines.append(f"{role.mention} — **{cost} pts**")
+    for alias, role_id in ROLE_ALIASES.items():
+        cost = ROLE_SHOP.get(role_id)
+        role = ctx.guild.get_role(role_id)
+        if role and cost is not None:
+            lines.append(f"**{alias}** → {role.mention} — **{cost} pts**")
+
     if not lines:
-        return await ctx.send("🛒 No valid roles configured for this server.")
-    await ctx.send(embed=discord.Embed(
-        title="🛒 Trivia Role Shop",
+        return await ctx.send("🛒 No valid roles available for this server.")
+
+    embed = discord.Embed(
+        title="🌠 Spica's Cosmic Role Shop",
         description="\n".join(lines),
-        color=discord.Color.gold()))
+        color=discord.Color.magenta()
+    ).set_footer(text="Use b!buy <alias> to claim your destiny ✨!")
+    await ctx.send(embed=embed)
 
 # b!buyrole to buy role using points
 @bot.command()
 async def buyrole(ctx, *, role: discord.Role = None):
-    if role is None:
-        return await ctx.send("Usage: `b!buyrole @Role`")
+    if not alias:
+        return await ctx.send("Usage: `b!buy spica`")
 
-    cost = ROLE_SHOP.get(role.id)
+    alias = alias.lower().strip()
+    role_id = ROLE_ALIASES.get(alias)
+    if role_id is None:
+        return await ctx.send("❌ Unknown role. Check `b!triviashop` for what's available.")
+
+    role = ctx.guild.get_role(role_id)
+    if not role:
+        return await ctx.send("❌ That role doesn’t exist on this server.")
+
+    cost = ROLE_SHOP.get(role_id)
     if cost is None:
         return await ctx.send("❌ That role isn’t for sale.")
 
-    # already has it?
     if role in ctx.author.roles:
         return await ctx.send("You already have that role!")
 
-    # bot permission / hierarchy check
     if ctx.guild.me.top_role <= role:
         return await ctx.send("❌ I’m not high enough in the role hierarchy to give that role.")
 
@@ -874,16 +906,15 @@ async def buyrole(ctx, *, role: discord.Role = None):
     if current_score < cost:
         return await ctx.send(f"❌ You need **{cost} pts**, but you only have **{current_score} pts**.")
 
-    # all good – deduct & assign
+    # Deduct + try to give role
     await change_user_score(uid, -cost)
     try:
-        await ctx.author.add_roles(role, reason="Purchased via trivia shop")
+        await ctx.author.add_roles(role, reason="Bought from trivia shop")
     except discord.Forbidden:
-        # refund on failure
         await change_user_score(uid, cost)
-        return await ctx.send("❌ I couldn’t add the role (missing permissions). No points were taken.")
+        return await ctx.send("❌ Couldn't assign the role (permissions issue). Refunded your points.")
     
-    await ctx.send(f"✅ Congratulations {ctx.author.name}! You bought {role.mention} for **{cost} pts**.")
+    await ctx.send(f"✅ {ctx.author.name} has purchased {role.mention}!")
 
 # Listener function for answer
 @bot.event
@@ -1134,6 +1165,7 @@ async def help(ctx):
 async def on_ready():
     await bot.wait_until_ready()
     load_role_shop()
+    load_role_aliases()
     load_jou_lines()
     load_spica_lines()      
     if not backup_trivia_data.is_running():
