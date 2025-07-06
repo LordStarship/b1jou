@@ -885,21 +885,18 @@ async def buy_role(ctx, *, alias: str = None):
     alias = alias.lower().strip()
     role_id = ROLE_ALIASES.get(alias)
     if role_id is None:
-        return await ctx.send("❌ Unknown role. Check `b!triviashop` for what's available.")
+        return 
 
     role = ctx.guild.get_role(role_id)
     if not role:
-        return await ctx.send("❌ That role doesn’t exist on this server.")
+        return 
 
     cost = ROLE_SHOP.get(role_id)
     if cost is None:
-        return await ctx.send("❌ That role isn’t for sale.")
+        return
 
     if role in ctx.author.roles:
         return await ctx.send("You already have that role!")
-
-    if ctx.guild.me.top_role <= role:
-        return await ctx.send("❌ I’m not high enough in the role hierarchy to give that role.")
 
     uid = str(ctx.author.id)
     current_score = await get_user_score(uid)
@@ -914,7 +911,7 @@ async def buy_role(ctx, *, alias: str = None):
         await change_user_score(uid, cost)
         return await ctx.send("❌ Couldn't assign the role (permissions issue). Refunded your points.")
     
-    await ctx.send(f"✅ You bought {role.mention} for **{cost} pts**.")
+    await ctx.send(f"{ctx.author.name} has purchased {role.mention}!")
 
 # Listener function for answer
 @bot.event
