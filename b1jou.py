@@ -911,6 +911,7 @@ async def buy_role(ctx, *, alias: str = None):
         await change_user_score(uid, cost)
         return await ctx.send("❌ Couldn't assign the role (permissions issue). Refunded your points.")
     
+    await backup_trivia_to_channel()
     await ctx.send(f"{ctx.author.name} has purchased {role.mention}!")
 
 # Listener function for answer
