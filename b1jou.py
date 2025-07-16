@@ -1181,19 +1181,25 @@ def save_birthdays(data):
         json.dump(data, f, indent=2)
 
 @bot.command()
-async def setbirthday(ctx, day: int, month: int, year: int):
+async def setbirthday(ctx, day: int, month: int, year: int = None):
     try:
-        # Validate date
-        dob = datetime(year, month, day)
+        # Use placeholder year if not given (for validation only)
+        test_year = year if year else 2000
+        datetime(test_year, month, day)
     except ValueError:
         return await ctx.send("❌ Invalid date. Please check your input!")
 
     uid = str(ctx.author.id)
     data = load_birthdays()
-    data[uid] = {"day": day, "month": month, "year": year}
+    entry = {"day": day, "month": month}
+    if year:
+        entry["year"] = year
+    data[uid] = entry
     save_birthdays(data)
 
-    await ctx.send(f"✅ Birthday registered for {ctx.author.mention}: `{day}-{month}-{year}`!")
+    msg = f"✅ Birthday registered for {ctx.author.mention}: `{day}-{month}"
+    msg += f"-{year}`!" if year else "`"
+    await ctx.send(msg)
     
 @tasks.loop(hours=24)
 async def birthday_checker():
@@ -1201,15 +1207,18 @@ async def birthday_checker():
     data = load_birthdays()
     now = datetime.utcnow()
     today = (now.day, now.month)
+    channel = bot.get_channel(1387429732370481173)
 
     for uid, bday in data.items():
         if (bday["day"], bday["month"]) == today:
-            age = now.year - bday["year"]
             try:
                 user = await bot.fetch_user(int(uid))
-                channel = bot.get_channel(1387429732370481173)
                 if channel:
-                    await channel.send(f"🎉 Happy birthday {user.mention}!! You are now **{age}** years old! 🎂")
+                    if "year" in bday:
+                        age = now.year - bday["year"]
+                        await channel.send(f"🎉 Happy birthday {user.mention}!! You are now **{age}** years old! 🎂")
+                    else:
+                        await channel.send(f"🎉 Happy birthday {user.mention}!! 🎂")
             except Exception as e:
                 print(f"Error sending birthday message: {e}")
 
@@ -1269,8 +1278,8 @@ async def help(ctx):
             "`b!triviastats [user]` — View trivia stats including best time, average, and WPM\n"
             "`b!triviatop` — See the trivia leaderboard\n"
             "`b!triviashop` — View the role shop\n"
-            "`b!buyrole <id>` — Spend trivia points to buy roles"
-            "`b!pingme` — Assign role to ping when Classic Trivia happens"
+            "`b!buyrole <id>` — Spend trivia points to buy roles\n"
+            "`b!pingme` — Assign role to ping when Classic Trivia happens\n"
             "`b!unpingme` — Remove role to ping when Classic Trivia happens"
         ),
         inline=False
@@ -1280,8 +1289,7 @@ async def help(ctx):
     embed.add_field(
         name="Birthday Commands 🎂",
         value=(
-            "`b!birthday set <day> <month> <year>` — Register your birthday\n"
-            "`b!birthday view` — View your saved birthday\n"
+            "`b!setbirthday <day> <month> <year>` — Register your birthday\n"
             "✨ I’ll wish you when the day comes (UTC) and tell your age!"
         ),
         inline=False
