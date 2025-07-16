@@ -735,6 +735,7 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
         current_q[mode] = None
 
 # b!starttrivia main command
+@bot.command()
 async def starttrivia(ctx, mode: int = 1):
     if mode not in (1, 2):
         return await ctx.send("❌ Invalid mode. Use `1` (Classic) or `2` (Speedrun).")
@@ -1289,7 +1290,7 @@ async def help(ctx):
     embed.add_field(
         name="Birthday Commands 🎂",
         value=(
-            "`b!setbirthday <day> <month> <year>` — Register your birthday\n"
+            "`b!setbirthday <day> <month> <year>` or `b!setbirthday <day> <month>` — Register your birthday\n"
             "✨ I’ll wish you when the day comes (UTC) and tell your age!"
         ),
         inline=False
