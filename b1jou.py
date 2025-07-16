@@ -33,19 +33,20 @@ DEBUG_CHANNELS = {
 }
 
 ########## CONFIG ##########
-DISCORD_EPOCH = 1420070400000               # discord snowflake
-TRIVIA_CSV = 'trivia_sheet.csv'             # trivia question file
-TRIVIA_DATA_FILE = 'trivia_data.json'       # trivia data file
-QUIZ_LENGTH_SEC      = 270                  # 4m 30s players can answer
-QUIZ_LENGTH_SEC_LOOP = 30                   # 30s for fast trivia
-POST_ANSWER_WINDOW   = 3                    # window that stays open after 1st correct
-INTER_ROUND_COOLDOWN = 300                  # total cycle time = 5 min
-PRE_ANNOUNCE_SEC     = 5                    # “Trivia in 5 seconds!” heads‑up
-BACKUP_CHANNEL_ID = 1389077962116038848     # channel to receive backup
-BACKUP_INTERVAL_MINUTES = 60                # backup every 1 hour
-DEFAULT_TARGET_NAME = "Spica"               # used when b!hit has no mention
-TEMPLATE_FILE       = "hit_templates.csv"   # templates for the hit
-DAMAGE_FILE         = "damage_phrases.csv"  # templates for the damage
+DISCORD_EPOCH           = 1420070400000         # discord snowflake
+TRIVIA_CSV              = 'trivia_sheet.csv'    # trivia question file
+TRIVIA_DATA_FILE        = 'trivia_data.json'    # trivia data file
+QUIZ_LENGTH_SEC         = 270                   # 4m 30s players can answer
+QUIZ_LENGTH_SEC_LOOP    = 30                    # 30s for fast trivia
+POST_ANSWER_WINDOW      = 3                     # window that stays open after 1st correct
+INTER_ROUND_COOLDOWN    = 300                   # total cycle time = 5 min
+PRE_ANNOUNCE_SEC        = 5                     # “Trivia in 5 seconds!” heads‑up
+BACKUP_CHANNEL_ID       = 1389077962116038848   # channel to receive backup
+BACKUP_INTERVAL_MINUTES = 60                    # backup every 1 hour
+DEFAULT_TARGET_NAME     = "Spica"               # used when b!hit has no mention
+TEMPLATE_FILE           = "hit_templates.csv"   # templates for the hit
+DAMAGE_FILE             = "damage_phrases.csv"  # templates for the damage
+BIRTHDAY_FILE           = "birthdays.json"      # Birthday file
 #############################
 
 TRIVIA_MODE1_CHANNELS = {
@@ -544,6 +545,40 @@ async def change_user_score(uid: str, delta: int):
                      "best_time": float("inf"), "best_question": ""}
         data[uid] = entry
         save_trivia_data(data)
+        
+# Ping for classic trivia
+@bot.command()
+async def pingtrivia(ctx):
+    """Add yourself to the trivia ping role."""
+    role = ctx.guild.get_role(1394860483864956948)
+    if not role:
+        return await ctx.send("⚠️ Role not found.")
+
+    if role in ctx.author.roles:
+        return await ctx.send("You’re already set to be pinged when trivia resumes!")
+
+    try:
+        await ctx.author.add_roles(role, reason="User opted in to trivia ping role")
+        await ctx.send("🔔 You’ll now be pinged when trivia resumes!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to add that role.")
+
+# Unping for classic trivia
+@bot.command()
+async def unpingtrivia(ctx):
+    """Remove yourself from the trivia ping role."""
+    role = ctx.guild.get_role(1394860483864956948)
+    if not role:
+        return await ctx.send("⚠️ Role not found.")
+
+    if role not in ctx.author.roles:
+        return await ctx.send("You’re not in the trivia ping list.")
+
+    try:
+        await ctx.author.remove_roles(role, reason="User opted out of trivia ping role")
+        await ctx.send("🔕 You’ll no longer be pinged when trivia resumes.")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove that role.")
 
 # b!starttrivia 1
 async def trivia_loop(channel: discord.TextChannel, mode: int):
@@ -608,7 +643,7 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
             if remaining > 0:
                 await asyncio.sleep(remaining / 1000)
 
-            await channel.send("✨ Trivia resumes in **5 seconds**…")
+            await channel.send(f"<@&1394860483864956948> ✨ Trivia resumes in **5 seconds**…")
             await asyncio.sleep(PRE_ANNOUNCE_SEC)
     finally:
         await _lock_channel(channel, allow_send=True)
@@ -700,15 +735,25 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
         current_q[mode] = None
 
 # b!starttrivia main command
-@bot.command()
-@commands.has_permissions(administrator=True)
 async def starttrivia(ctx, mode: int = 1):
     if mode not in (1, 2):
-        return await ctx.send("❌ Invalid mode. Use 1 (Classic) or 2 (Speedrun).")
+        return await ctx.send("❌ Invalid mode. Use `1` (Classic) or `2` (Speedrun).")
 
+    # Check if in allowed channel
     allowed_channels = TRIVIA_MODE1_CHANNELS if mode == 1 else TRIVIA_MODE2_CHANNELS
     if ctx.channel.id not in allowed_channels:
         return await ctx.send(f"❌ This channel is not allowed for mode {mode}.")
+
+    # Permission checks
+    is_admin = ctx.author.guild_permissions.administrator
+    has_speedrun_role = any(r.id == 1390941063899774976 for r in ctx.author.roles)
+
+    if mode == 1:
+        if not is_admin:
+            return await ctx.send("❌ Only administrators can start Classic Trivia.")
+    elif mode == 2:
+        if not (is_admin or has_speedrun_role):
+            return await ctx.send("❌ You don’t have permission to start Speedrun Trivia.")
 
     if trivia_running_flags[mode]:
         return await ctx.send(f"❗ Trivia mode {mode} is already running!")
@@ -722,7 +767,7 @@ async def starttrivia(ctx, mode: int = 1):
     else:
         trivia_tasks[2] = asyncio.create_task(speedrun_trivia_loop(ctx.channel, mode))
         await ctx.send("💫 Speedrun Trivia started!")
-        
+
 # b!stoptrivia to stop trivia command
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -825,7 +870,7 @@ async def triviastats(ctx, target_input: str = None):
     embed.set_footer(text=footer_info['text'], icon_url=footer_info['icon_url'])
     await ctx.send(embed=embed)
 
-# ──── Trivia Role‑Shop helpers ─────────────────────────────────────
+# Trivia role shop
 ROLE_SHOP_FILE = "role_shop.json"
 ROLE_SHOP: dict[int, int] = {}          # role‑id ➜ cost
 
@@ -1048,7 +1093,7 @@ async def backuptrivia(ctx):
         print("[MANUAL BACKUP] Error:", e)
         await ctx.send("⚠️ Failed to send backup.")
 
-# ─── Hit‑command assets ────────────────────────────────────────────
+# Hit commands
 TEMPLATES: list[str] = []
 DAMAGES:   list[str] = []
 SPICA_HIT_LINES: list[str] = []
@@ -1083,7 +1128,7 @@ def load_hit_assets():
 # load once at import time
 load_hit_assets()
 
-# ─── fun b!hit ------------------------------------------------------
+# b!hit to hit people
 @bot.command()
 async def hit(ctx, target: discord.Member = None):
     attacker_name = ctx.author.display_name
@@ -1123,6 +1168,51 @@ async def hit(ctx, target: discord.Member = None):
     embed.set_footer(**get_footer_info(ctx.guild))
     await ctx.send(embed=embed)
 
+# Birthday
+def load_birthdays():
+    try:
+        with open(BIRTHDAY_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_birthdays(data):
+    with open(BIRTHDAY_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+@bot.command()
+async def setbirthday(ctx, day: int, month: int, year: int):
+    try:
+        # Validate date
+        dob = datetime(year, month, day)
+    except ValueError:
+        return await ctx.send("❌ Invalid date. Please check your input!")
+
+    uid = str(ctx.author.id)
+    data = load_birthdays()
+    data[uid] = {"day": day, "month": month, "year": year}
+    save_birthdays(data)
+
+    await ctx.send(f"✅ Birthday registered for {ctx.author.mention}: `{day}-{month}-{year}`!")
+    
+@tasks.loop(hours=24)
+async def birthday_checker():
+    await bot.wait_until_ready()
+    data = load_birthdays()
+    now = datetime.utcnow()
+    today = (now.day, now.month)
+
+    for uid, bday in data.items():
+        if (bday["day"], bday["month"]) == today:
+            age = now.year - bday["year"]
+            try:
+                user = await bot.fetch_user(int(uid))
+                channel = bot.get_channel(1387429732370481173)
+                if channel:
+                    await channel.send(f"🎉 Happy birthday {user.mention}!! You are now **{age}** years old! 🎂")
+            except Exception as e:
+                print(f"Error sending birthday message: {e}")
+
 # Help Command
 @bot.command()
 async def help(ctx):
@@ -1135,6 +1225,7 @@ async def help(ctx):
         color=discord.Color.blurple()
     )
 
+    # 🙏 Prayers
     embed.add_field(
         name="`b!pray [@user1] [@user2] ...`",
         value=(
@@ -1148,32 +1239,50 @@ async def help(ctx):
     )
 
     embed.add_field(
-        name="`b!hit [@target]`",
-        value=(
-            "👊 Bonk your friends (or Spica!) with random flavor text:\n"
-            "- Example: `b!hit @someone`\n"
-            "- No mention? It hits Spica by default\n"
-            "- Uses randomized attack + damage messages!"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="`b!stats`",
-        value="Shows your personal prayer count, streak, and server-wide totals 🔥",
-        inline=False
-    )
-
-    embed.add_field(
-        name="`b!top`",
-        value="See the top 5 prayer senders in the server. Who is the most devout? 🏆",
+        name="`b!stats` • `b!top`",
+        value="📊 View your prayer stats, streak, and leaderboard across the server.",
         inline=False
     )
 
     embed.add_field(
         name="`b!jou [@target]`",
+        value="✨ Sends a fun random message. Defaults to Spica if no target!",
+        inline=False
+    )
+
+    embed.add_field(
+        name="`b!hit [@target]`",
         value=(
-            "Sends a random fun line. Defaults to Spica if no target! ✨"
+            "👊 Bonk your friends (or Spica!) with random flavor text.\n"
+            "- No mention? It bonks Spica!"
+        ),
+        inline=False
+    )
+
+    # 🧠 Trivia
+    embed.add_field(
+        name="Trivia Commands 🎮",
+        value=(
+            "`b!starttrivia 1` — Start Classic Trivia (Admins only)\n"
+            "`b!starttrivia 2` — Start Speedrun Trivia (Admins or Gemstone Collectors 💎)\n"
+            "`b!stoptrivia [mode]` — Stop an active trivia session\n"
+            "`b!triviastats [user]` — View trivia stats including best time, average, and WPM\n"
+            "`b!triviatop` — See the trivia leaderboard\n"
+            "`b!triviashop` — View the role shop\n"
+            "`b!buyrole <id>` — Spend trivia points to buy roles"
+            "`b!pingme` — Assign role to ping when Classic Trivia happens"
+            "`b!unpingme` — Remove role to ping when Classic Trivia happens"
+        ),
+        inline=False
+    )
+
+    # 🎂 Birthday
+    embed.add_field(
+        name="Birthday Commands 🎂",
+        value=(
+            "`b!birthday set <day> <month> <year>` — Register your birthday\n"
+            "`b!birthday view` — View your saved birthday\n"
+            "✨ I’ll wish you when the day comes (UTC) and tell your age!"
         ),
         inline=False
     )
@@ -1186,7 +1295,6 @@ async def help(ctx):
 
     await ctx.send(embed=embed)
 
-
 # Call loop when bot runs
 @bot.event
 async def on_ready():
@@ -1194,10 +1302,11 @@ async def on_ready():
     load_role_shop()
     load_role_aliases()
     load_jou_lines()
-    load_spica_lines()      
+    load_spica_lines()    
+    if not birthday_checker.is_running():
+        birthday_checker.start()  
     if not backup_trivia_data.is_running():
         backup_trivia_data.start()
-    print(f"[BOT] Logged in as {bot.user}")
 
 # 🌐 Flask keep_alive() setup
 app = Flask('')
