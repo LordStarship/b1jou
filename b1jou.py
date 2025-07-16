@@ -1279,8 +1279,8 @@ async def help(ctx):
             "`b!triviatop` — See the trivia leaderboard\n"
             "`b!triviashop` — View the role shop\n"
             "`b!buyrole <id>` — Spend trivia points to buy roles\n"
-            "`b!pingme` — Assign role to ping when Classic Trivia happens\n"
-            "`b!unpingme` — Remove role to ping when Classic Trivia happens"
+            "`b!pingtrivia` — Assign role to ping when Classic Trivia happens\n"
+            "`b!unpingtrivia` — Remove role to ping when Classic Trivia happens"
         ),
         inline=False
     )
