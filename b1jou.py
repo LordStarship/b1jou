@@ -79,7 +79,6 @@ intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="b!", intents=intents)
-bot.remove_command('help')
 
 # JSON data helper
 async def load_user_data(guild_id, user_id):
@@ -627,7 +626,12 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
                     best_time = min(res["time_ms"], prev["best_time"])
                     best_q = current_q[mode]["q"] if best_time == res["time_ms"] else prev["best_question"]
 
-                    data[uid] = {"score": new_score, "best_time": best_time, "best_question": best_q}
+                    data[uid] = {
+                        "score": new_score,
+                        "total_score": prev.get("total_score", prev["score"]) + res["points"],
+                        "best_time": best_time,
+                        "best_question": best_q
+                    }
 
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
@@ -699,7 +703,12 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
                     best_time = min(res["time_ms"], prev["best_time"])
                     best_q = current_q[mode]["q"] if best_time == res["time_ms"] else prev["best_question"]
 
-                    data[uid] = {"score": new_score, "best_time": best_time, "best_question": best_q}
+                    data[uid] = {
+                        "score": new_score,
+                        "total_score": prev.get("total_score", prev["score"]) + res["points"],
+                        "best_time": best_time,
+                        "best_question": best_q
+                    }
 
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
                     lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
@@ -802,7 +811,7 @@ async def triviatop(ctx):
         for uid, stats in data.items()
     }
 
-    top5 = sorted(valid_data.items(), key=lambda t: t[1].get("score", 0), reverse=True)[:10]
+    top5 = sorted(valid_data.items(), key=lambda t: t[1].get("total_score", t[1].get("score", 0)), reverse=True)[:10]
     lines = []
     footer_info = get_footer_info(ctx.guild)
 
@@ -812,9 +821,11 @@ async def triviatop(ctx):
         best_time = stats.get("best_time")
         question = stats.get("best_question", "–")
         time_str = f"{best_time // 1000}.{best_time % 1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
-
+        total_score = stats.get("total_score", score)
+        
         lines.append(
-            f"**{i}. {user.display_name}** Total Points: `{score}` pts\n"
+            f"**{i}. {user.display_name}**\n"
+            f"⭐ Total Points: `{total_score}` pts | 💰 Available: `{score}` pts\n"
             f"PB: `{time_str}` on *{question}*"
         )
 
@@ -854,6 +865,7 @@ async def triviastats(ctx, target_input: str = None):
         stats = {"score": stats}
 
     score = stats.get("score", 0)
+    total_score = stats.get("total_score", score)
     best_time = stats.get("best_time")
     question = stats.get("best_question", "–")
     time_str = f"{best_time // 1000}.{best_time % 1000:03d}s" if isinstance(best_time, (int, float)) else "N/A"
@@ -861,9 +873,10 @@ async def triviastats(ctx, target_input: str = None):
     embed = discord.Embed(
         title=f"📊 Trivia Stats – {target.display_name}",
         description=(
-            f"**Total Score:** `{score}` pts\n"
-            f"**Fastest Answer:** `{time_str}`\n"
-            f"**Best Question:** *{question}*"
+            f"💰 **Available Points:** `{score}` pts\n"
+            f"⭐ **Total Points Earned:** `{total_score}` pts\n"
+            f"⚡ **Fastest Answer:** `{time_str}`\n"
+            f"🧠 **Best Question:** *{question}*"
         ),
         color=discord.Color.gold()
     )
@@ -990,6 +1003,60 @@ async def buy_role(ctx, *, alias: str = None):
     
     await backup_trivia_to_channel()
     await ctx.send(f"{ctx.author.name} has purchased {role.mention}!")
+
+@bot.command(name="setrole")
+async def set_role(ctx, *, alias: str = None):
+    if not alias:
+        return await ctx.send("Usage: `b!setrole <alias>`")
+
+    alias = alias.lower().strip()
+    role_id = ROLE_ALIASES.get(alias)
+    if not role_id:
+        return await ctx.send("❌ Role not found in shop.")
+
+    role = ctx.guild.get_role(role_id)
+    if not role:
+        return await ctx.send("❌ Role no longer exists.")
+
+    if role in ctx.author.roles:
+        return await ctx.send("You're already wearing that role!")
+
+    uid = str(ctx.author.id)
+    user_score = await get_user_score(uid)
+
+    # Optional: Validate if they've bought it before by assuming roles owned = bought
+    if user_score + ROLE_SHOP.get(role_id, 99999999) >= await get_user_score(uid):
+        return await ctx.send("❌ You haven't bought this role yet.")
+
+    try:
+        await ctx.author.add_roles(role, reason="Equipped purchased role")
+        await ctx.send(f"{ctx.author.mention} is now wearing {role.mention}! ✨")
+    except discord.Forbidden:
+        await ctx.send("❌ Couldn't assign the role (permissions issue).")
+
+
+@bot.command(name="unsetrole")
+async def unset_role(ctx, *, alias: str = None):
+    if not alias:
+        return await ctx.send("Usage: `b!unsetrole <alias>`")
+
+    alias = alias.lower().strip()
+    role_id = ROLE_ALIASES.get(alias)
+    if not role_id:
+        return await ctx.send("❌ Role not found in shop.")
+
+    role = ctx.guild.get_role(role_id)
+    if not role:
+        return await ctx.send("❌ Role no longer exists.")
+
+    if role not in ctx.author.roles:
+        return await ctx.send("❌ You don't currently have this role equipped.")
+
+    try:
+        await ctx.author.remove_roles(role, reason="Unequipped purchased role")
+        await ctx.send(f"{ctx.author.mention} has unequipped {role.mention}.")
+    except discord.Forbidden:
+        await ctx.send("❌ Couldn't remove the role (permissions issue).")
 
 # Listener function for answer
 @bot.event
@@ -1280,6 +1347,7 @@ async def help(ctx):
             "`b!triviatop` — See the trivia leaderboard\n"
             "`b!triviashop` — View the role shop\n"
             "`b!buyrole <id>` — Spend trivia points to buy roles\n"
+            "`b!setrole <id>` — Set your purchased role on or off\n"
             "`b!pingtrivia` — Assign role to ping when Classic Trivia happens\n"
             "`b!unpingtrivia` — Remove role to ping when Classic Trivia happens"
         ),

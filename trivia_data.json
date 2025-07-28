@@ -1,11 +1,11 @@
 {
   "391729605230329859": {
-    "score": 1436,
+    "score": 1609,
     "best_time": 1350,
     "best_question": "A leap year happens once every how many years?"
   },
   "423805323653152778": {
-    "score": 2013,
+    "score": 2262,
     "best_time": 740,
     "best_question": "How many eyes does a bee have?"
   },
@@ -15,7 +15,7 @@
     "best_question": "How many legs does a bee have?"
   },
   "674867606108241920": {
-    "score": 576,
+    "score": 814,
     "best_time": 1735,
     "best_question": "How many days are in a week?"
   },
@@ -30,27 +30,27 @@
     "best_question": "What is the only even number that is considered a prime number?"
   },
   "564500471256055822": {
-    "score": 63,
+    "score": 81,
     "best_time": 2084,
     "best_question": "How many days are in a week?"
   },
   "375759240171618305": {
-    "score": 2352,
+    "score": 4478,
     "best_time": 1303,
     "best_question": "How many eyes does a bee have?"
   },
   "1191128088029966399": {
-    "score": 1715,
+    "score": 1770,
     "best_time": 1366,
     "best_question": "A leap year happens once every how many years?"
   },
   "1021417830320709652": {
-    "score": 688,
+    "score": 764,
     "best_time": 1460,
     "best_question": "How many gospels are in the bible?"
   },
   "839526735595044924": {
-    "score": 656,
+    "score": 668,
     "best_time": 1917,
     "best_question": "What is the only even number that is considered a prime number?"
   },
@@ -65,9 +65,9 @@
     "best_question": "In Battle Cats, what is the name of the first unit you receive in the game?"
   },
   "890042996693827584": {
-    "score": 2,
-    "best_time": 94305,
-    "best_question": "What is the name of the only US president who served 3 terms in office?"
+    "score": 6,
+    "best_time": 87513,
+    "best_question": "In the periodic table of elements, the atomic number represents the number of what?"
   },
   "772765211286831116": {
     "score": 2,
@@ -80,9 +80,9 @@
     "best_question": "Who is the god we worship in this server?"
   },
   "832245483828674600": {
-    "score": 176,
-    "best_time": 4484,
-    "best_question": "In Geometry Dash, what main level requires 30 real coins to unlock and play?"
+    "score": 263,
+    "best_time": 2719,
+    "best_question": "From where does the planet Earth get most of its energy?"
   },
   "320159499392516106": {
     "score": 172,
@@ -90,7 +90,7 @@
     "best_question": "How many days are in a week?"
   },
   "1215766628697116882": {
-    "score": 22,
+    "score": 24,
     "best_time": 22911,
     "best_question": "In Terraria Calamity, which bow is the direct upgrade to \u201cThe Storm\u201d?"
   },
@@ -100,7 +100,7 @@
     "best_question": "In what country is the Great Wall located in?"
   },
   "290073361877303296": {
-    "score": 6,
+    "score": 26,
     "best_time": 4582,
     "best_question": "In what country is Machu Picchu located in?"
   },
@@ -115,7 +115,7 @@
     "best_question": "How many continents are in the Earth?"
   },
   "862140026866761779": {
-    "score": 36,
+    "score": 40,
     "best_time": 3688,
     "best_question": "What is the softest naturally occurring mineral in the world?"
   },
@@ -123,5 +123,15 @@
     "score": 2,
     "best_time": 26287,
     "best_question": "In Undertale, who is technically the final boss in the genocide route?"
+  },
+  "504239807145443328": {
+    "score": 82,
+    "best_time": 4048,
+    "best_question": "In the Pokemon anime, what is the name of Ash Ketchum's companion?"
+  },
+  "718611636180615179": {
+    "score": 4,
+    "best_time": 85994,
+    "best_question": "What is the fastest land animal?"
   }
 }
