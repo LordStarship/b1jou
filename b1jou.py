@@ -79,6 +79,7 @@ intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="b!", intents=intents)
+bot.remove_command('help')
 
 # JSON data helper
 async def load_user_data(guild_id, user_id):
