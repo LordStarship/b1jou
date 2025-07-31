@@ -825,9 +825,9 @@ async def triviatop(ctx):
         total_score = stats.get("total_score", score)
         
         lines.append(
-            f"**{i}. {user.display_name}**\n"
+            f"**{i}. {user.display_name}**"
             f"⭐ Total Points: `{total_score}` pts | 💰 Available: `{score}` pts\n"
-            f"PB: `{time_str}` on *{question}*"
+            f"PB: `{time_str}` on *{question}*\n"
         )
 
     await ctx.send(embed=discord.Embed(
