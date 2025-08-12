@@ -6,8 +6,8 @@
     "best_question": "A leap year happens once every how many years?"
   },
   "423805323653152778": {
-    "score": 2773,
-    "total_score": 2773,
+    "score": 2789,
+    "total_score": 2789,
     "best_time": 740,
     "best_question": "How many eyes does a bee have?"
   },
@@ -17,8 +17,8 @@
     "best_question": "How many legs does a bee have?"
   },
   "674867606108241920": {
-    "score": 902,
-    "total_score": 902,
+    "score": 930,
+    "total_score": 930,
     "best_time": 1735,
     "best_question": "How many days are in a week?"
   },
@@ -28,7 +28,8 @@
     "best_question": "What is the special currency used to summon characters in Genshin Impact called?"
   },
   "1012134108178157629": {
-    "score": 826,
+    "score": 895,
+    "total_score": 895,
     "best_time": 1700,
     "best_question": "What is the only even number that is considered a prime number?"
   },
@@ -38,14 +39,14 @@
     "best_question": "How many days are in a week?"
   },
   "375759240171618305": {
-    "score": 1714,
-    "total_score": 7714,
+    "score": 1920,
+    "total_score": 7920,
     "best_time": 1303,
     "best_question": "How many eyes does a bee have?"
   },
   "1191128088029966399": {
-    "score": 2013,
-    "total_score": 3013,
+    "score": 2077,
+    "total_score": 3077,
     "best_time": 1366,
     "best_question": "A leap year happens once every how many years?"
   },
@@ -55,8 +56,8 @@
     "best_question": "How many gospels are in the bible?"
   },
   "839526735595044924": {
-    "score": 92,
-    "total_score": 1092,
+    "score": 422,
+    "total_score": 1422,
     "best_time": 1274,
     "best_question": "In Blue Archive, this Trinity student was kicked out of the Tea Party due to her troubling and chaotic nature."
   },
@@ -120,12 +121,14 @@
     "best_question": "Who is the final boss in the hit game Terraria?"
   },
   "822498858386194483": {
-    "score": 25,
-    "best_time": 2461,
-    "best_question": "How many continents are in the Earth?"
+    "score": 150,
+    "total_score": 150,
+    "best_time": 1554,
+    "best_question": "How many lines does the United States flag have?"
   },
   "862140026866761779": {
-    "score": 40,
+    "score": 42,
+    "total_score": 42,
     "best_time": 3688,
     "best_question": "What is the softest naturally occurring mineral in the world?"
   },
@@ -135,9 +138,10 @@
     "best_question": "In Undertale, who is technically the final boss in the genocide route?"
   },
   "504239807145443328": {
-    "score": 82,
-    "best_time": 4048,
-    "best_question": "In the Pokemon anime, what is the name of Ash Ketchum's companion?"
+    "score": 86,
+    "total_score": 86,
+    "best_time": 3952,
+    "best_question": "What type of scale measures how basic or acidic a solution is?"
   },
   "718611636180615179": {
     "score": 4,
@@ -151,10 +155,10 @@
     "best_question": "What is the smallest country in the world by area?"
   },
   "779688683762352129": {
-    "score": 1374,
-    "total_score": 1374,
-    "best_time": 2652,
-    "best_question": "H2O is more often known as what?"
+    "score": 999,
+    "total_score": 1999,
+    "best_time": 2114,
+    "best_question": "How many lines does the United States flag have?"
   },
   "551398841073532928": {
     "score": 11,
@@ -163,8 +167,8 @@
     "best_question": "Hatsune Miku is an example of what line of software?"
   },
   "218382186506616832": {
-    "score": 12,
-    "total_score": 12,
+    "score": 14,
+    "total_score": 14,
     "best_time": 26835,
     "best_question": "How many continents are in the Earth?"
   }

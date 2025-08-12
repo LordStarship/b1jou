@@ -8,6 +8,7 @@ from threading import Thread
 import firebase_admin
 from firebase_admin import credentials, firestore
 import unicodedata
+import bossfight
 
 cred_json = os.environ['FIREBASE_CREDENTIALS_JSON']
 cred = credentials.Certificate(json.loads(cred_json))
@@ -80,6 +81,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="b!", intents=intents)
 bot.remove_command('help')
+bossfight.setup(bot)
 
 # JSON data helper
 async def load_user_data(guild_id, user_id):
