@@ -12,7 +12,8 @@ import bossfight
 
 cred_json = os.environ['FIREBASE_CREDENTIALS_JSON']
 cred = credentials.Certificate(json.loads(cred_json))
-firebase_admin.initialize_app(cred)
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # ✅ Allowed (guild_id, channel_id) pairs
