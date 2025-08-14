@@ -638,7 +638,8 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
                     }
 
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
-                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
+                    name_display = res['user'].display_name if hasattr(res['user'], 'display_name') else str(uid)
+                    lines.append(f"{name_display} — `{res['points']} pt` ({t})")
 
                 await safe_save_data(data)
                 await backup_trivia_to_channel()
@@ -651,7 +652,7 @@ async def trivia_loop(channel: discord.TextChannel, mode: int):
             if remaining > 0:
                 await asyncio.sleep(remaining / 1000)
 
-            await channel.send(f"<@&1394860483864956948> ✨ Trivia resumes in **5 seconds**…")
+            await channel.send(f"<@&1394860483864956948> ✨ Trivia resumes in **5 seconds**…")
             await asyncio.sleep(PRE_ANNOUNCE_SEC)
     finally:
         await _lock_channel(channel, allow_send=True)
@@ -715,7 +716,8 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
                     }
 
                     t = f"{res['time_ms']//1000}.{res['time_ms']%1000:03d}s"
-                    lines.append(f"{res['user'].display_name} — `{res['points']} pt` ({t})")
+                    name_display = res['user'].display_name if hasattr(res['user'], 'display_name') else str(uid)
+                    lines.append(f"{name_display} — `{res['points']} pt` ({t})")
 
                 await safe_save_data(data)
                 await backup_trivia_to_channel()
@@ -732,8 +734,17 @@ async def speedrun_trivia_loop(channel: discord.TextChannel, mode: int):
             leaderboard = sorted(session_scores.items(), key=lambda t: t[1], reverse=True)
             lines = []
             for i, (uid, score) in enumerate(leaderboard, 1):
-                user = await bot.fetch_user(int(uid))
-                lines.append(f"**{i}.** {user.display_name} — `{score}` points")
+                uid_int = int(uid)
+                member = channel.guild.get_member(uid_int) or bot.get_user(uid_int)
+                if not member:
+                    try:
+                        member = await bot.fetch_user(uid_int)
+                        await asyncio.sleep(0.2)
+                    except:
+                        member = discord.Object(id=uid_int)
+
+                name_display = member.display_name if hasattr(member, "display_name") else str(uid_int)
+                lines.append(f"**{i}.** {name_display} — `{score}` points")
 
             await channel.send(embed=discord.Embed(
                 title="🏁 Speedrun Leaderboard",
