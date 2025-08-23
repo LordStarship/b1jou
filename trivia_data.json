@@ -1,24 +1,24 @@
 {
   "391729605230329859": {
-    "score": 1695,
-    "total_score": 1695,
+    "score": 1676,
+    "total_score": 1676,
     "best_time": 1350,
     "best_question": "A leap year happens once every how many years?"
   },
   "423805323653152778": {
-    "score": 3039,
-    "total_score": 3039,
+    "score": 4180,
+    "total_score": 4180,
     "best_time": 740,
     "best_question": "How many eyes does a bee have?"
   },
   "912948455545126913": {
-    "score": 169,
-    "best_time": 1567,
+    "score": 1169,
+    "best_time": 2567,
     "best_question": "How many legs does a bee have?"
   },
   "674867606108241920": {
-    "score": 982,
-    "total_score": 982,
+    "score": 950,
+    "total_score": 950,
     "best_time": 1735,
     "best_question": "How many days are in a week?"
   },
@@ -28,8 +28,8 @@
     "best_question": "What is the special currency used to summon characters in Genshin Impact called?"
   },
   "1012134108178157629": {
-    "score": 897,
-    "total_score": 897,
+    "score": 895,
+    "total_score": 895,
     "best_time": 1700,
     "best_question": "What is the only even number that is considered a prime number?"
   },
@@ -39,14 +39,14 @@
     "best_question": "How many days are in a week?"
   },
   "375759240171618305": {
-    "score": 2972,
-    "total_score": 8972,
+    "score": 4253,
+    "total_score": 10253,
     "best_time": 1303,
     "best_question": "How many eyes does a bee have?"
   },
   "1191128088029966399": {
-    "score": 2675,
-    "total_score": 3675,
+    "score": 3487,
+    "total_score": 4487,
     "best_time": 1366,
     "best_question": "A leap year happens once every how many years?"
   },
@@ -89,8 +89,8 @@
     "best_question": "Who is the god we worship in this server?"
   },
   "832245483828674600": {
-    "score": 307,
-    "total_score": 307,
+    "score": 309,
+    "total_score": 309,
     "best_time": 2719,
     "best_question": "From where does the planet Earth get most of its energy?"
   },
@@ -155,14 +155,14 @@
     "best_question": "What is the smallest country in the world by area?"
   },
   "779688683762352129": {
-    "score": 1370,
-    "total_score": 2370,
+    "score": 2449,
+    "total_score": 3449,
     "best_time": 2114,
     "best_question": "How many lines does the United States flag have?"
   },
   "551398841073532928": {
-    "score": 11,
-    "total_score": 11,
+    "score": 13,
+    "total_score": 13,
     "best_time": 5232,
     "best_question": "Hatsune Miku is an example of what line of software?"
   },
@@ -171,5 +171,11 @@
     "total_score": 14,
     "best_time": 26835,
     "best_question": "How many continents are in the Earth?"
+  },
+  "1266275443556749458": {
+    "score": 22,
+    "total_score": 22,
+    "best_time": 5459,
+    "best_question": "What is the national flower of the United States?"
   }
 }
