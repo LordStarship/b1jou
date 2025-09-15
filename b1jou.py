@@ -73,6 +73,7 @@ SPECIAL_SELF_ANSWERS = {
     "hydra": 1249356728974315684,
     "lordstarship": 391729605230329859,
     "stella": 423805323653152778,
+    "pedro": 951001787358384168,
 }
 
 intents = discord.Intents.default()
