@@ -1125,15 +1125,35 @@ async def backup_trivia_data():
                 return
             channel = bot.get_channel(BACKUP_CHANNEL_ID)
             if channel is None:
-                print("[BACKUP] backup channel not found")
+                print("[BACKUP TRIVIA] backup channel not found")
                 return
             ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
             await channel.send(
                 content=f"🗂️ **Trivia backup – UTC {ts}**",
                 file=discord.File(fp=TRIVIA_DATA_FILE, filename=f"trivia_data_backup_{ts}.json"))
-            print("[BACKUP] sent backup", ts)
+            print("[BACKUP TRIVIA] sent backup", ts)
     except Exception as e:
-        print("[BACKUP] error:", e)
+        print("[BACKUP TRIVIA] error:", e)
+
+# Hourly backup for birthdays as well, birthdays.json
+@tasks.loop(minutes=BACKUP_INTERVAL_MINUTES)
+async def backup_birthday_data():
+    try:
+        async with FILE_LOCK:
+            p = pathlib.Path(BIRTHDAY_FILE)
+            if not p.exists() or p.stat().st_size == 0:
+                return
+            channel = bot.get_channel(BACKUP_CHANNEL_ID)
+            if channel is None:
+                print("[BACKUP BDAY] channel not found")
+                return
+            ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+            await channel.send(
+                content=f"🗂️ **Birthday backup – UTC {ts}**"
+                file=discord.File(fp=BIRTHDAY_FILE, filename=f"trivia_data_backup_{ts}.json"))
+            print("[BACKUP BDAY] sent backup", ts)
+    except Exception as e:
+        print("[BACKUP BDAY] error:", e)
         
 # auto backup after every trivia
 async def backup_trivia_to_channel():
@@ -1400,6 +1420,8 @@ async def on_ready():
         birthday_checker.start()  
     if not backup_trivia_data.is_running():
         backup_trivia_data.start()
+    if not backup_birthday_data.is_running():
+        backup_birthday_data.start()
 
 # 🌐 Flask keep_alive() setup
 app = Flask('')
