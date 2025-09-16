@@ -1167,6 +1167,41 @@ async def on_message_edit(message_before, message_after):
         embed.set_footer(text = f"Message ID: {message_before.id}")
         await channel.send("Edited Message Detected", embed=embed)
 
+
+@bot.event
+async def on_message_delete(message):
+    if message.author == bot.user:
+        return
+
+    if message.guild.id in list(LOGGING_CHANNELS.keys()):
+        channel = bot.get_channel(LOGGING_CHANNELS[message.guild.id])
+
+        embed = discord.Embed(
+            title = "Deleted Message Logged",
+            description = f"Deleted message by {message.author.name} detected"
+        )
+
+        embed.set_author(
+            name = message.author.name,
+            icon_url = message.author.display_avatar
+        )
+
+        if len(message.embeds) >= 1:
+            embed.add_field(
+                name="\nDeleted Message Content (embed)",
+                value = "`This message has an embed, which is unable to be logged`",
+                inline = False
+            )
+        else:
+            embed.add_field(
+                name = "\nDeleted Message Content:",
+                value = message.content,
+                inline = False
+            )
+        embed.set_footer(text = f"Message ID: {message.id}")
+
+        await channel.send("Deleted Message Detected", embed=embed)
+
 # Hourly backup, on trivia_data.json
 @tasks.loop(minutes=BACKUP_INTERVAL_MINUTES)
 async def backup_trivia_data():
