@@ -35,7 +35,6 @@ DEBUG_CHANNELS = {
     (715855925285486682, 715855925285486685),
 }
 
-
 # Guild, channel pairs for logging
 LOGGING_CHANNELS = {
     746162870957637723 : 1417486539457302638,   # Ella's server, b1test
