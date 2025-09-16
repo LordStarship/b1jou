@@ -21,6 +21,7 @@ ALLOWED_CHANNELS = {
     (1386929798831538248, 1387653760175706172),     # Cavern of Dreams, bot-commands
     (1386929798831538248, 1390173770085437510),     # Cavern of Dreams, B1jou Center
     (715855925285486682, 715855925285486685),       # LordStarship's Server, debugging
+    (746162870957637723, 1417486539457302638)       # Ella's Server, b1test
 }
 
 # Pray channel
@@ -32,6 +33,12 @@ PRAY_CHANNELS = {
 DEBUG_CHANNELS = {
     (1386929798831538248, 1387653760175706172),
     (715855925285486682, 715855925285486685),
+}
+
+
+# Guild, channel pairs for logging
+LOGGING_CHANNELS = {
+    746162870957637723 : 1417486539457302638,
 }
 
 ########## CONFIG ##########
@@ -1114,6 +1121,51 @@ async def on_message(message: discord.Message):
             if not answered_flags[mode]:
                 answered_flags[mode] = True
                 first_correct_events[mode].set()
+
+@bot.event
+async def on_message_edit(message_before, message_after):
+    if message_before.author == bot.user:
+        return
+
+    if message_before.guild.id in list(LOGGING_CHANNELS.keys()):
+        channel = bot.get_channel(LOGGING_CHANNELS[message_before.guild.id])
+
+        embed = discord.Embed(
+            title="Edited Message Logged:",
+            description= f"Edited message sent by {message_before.author.name} detected"
+        )
+
+        embed.set_author(name = message_before.author.name, icon_url = message_before.author.display_avatar)
+        if len(message_before.embeds) == 0:
+            embed.add_field(
+                name="\nMessage Content before edit:",
+                value = message_before.content, 
+                inline = True
+            )
+            
+        else:
+            embed.add_field(
+                name = "\nMessage Content before edit (embed)",
+                value= "`This message has an embed, which are unable to be logged`",
+                inline = True
+            )
+        
+        if len(message_after.embeds) == 0:
+            embed.add_field(
+                name = "\nMessage Content after edit",
+                value = message_after.content,
+                inline = True
+            )
+
+        else:
+            embed.add_field(
+                name = "\nMessage Content after edit (embed)",
+                value = "`This message has an embed, which are unable to be logged`",
+                inline = True
+            )
+        
+        embed.set_footer(text = f"Message ID: {message_before.id}")
+        await channel.send("Edited Message Detected", embed=embed)
 
 # Hourly backup, on trivia_data.json
 @tasks.loop(minutes=BACKUP_INTERVAL_MINUTES)
