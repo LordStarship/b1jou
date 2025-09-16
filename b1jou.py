@@ -38,7 +38,8 @@ DEBUG_CHANNELS = {
 
 # Guild, channel pairs for logging
 LOGGING_CHANNELS = {
-    746162870957637723 : 1417486539457302638,
+    746162870957637723 : 1417486539457302638,   # Ella's server, b1test
+    1386929798831538248 : 1387653725077901322   # Cavern of Dreams, logs
 }
 
 ########## CONFIG ##########
