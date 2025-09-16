@@ -1149,7 +1149,7 @@ async def backup_birthday_data():
                 return
             ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
             await channel.send(
-                content=f"🗂️ **Birthday backup – UTC {ts}**"
+                content=f"🗂️ **Birthday backup – UTC {ts}**",
                 file=discord.File(fp=BIRTHDAY_FILE, filename=f"trivia_data_backup_{ts}.json"))
             print("[BACKUP BDAY] sent backup", ts)
     except Exception as e:
