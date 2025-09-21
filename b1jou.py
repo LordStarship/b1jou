@@ -1086,7 +1086,7 @@ async def unset_role(ctx, *, alias: str = None):
 async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
-    if message.author.bot or not message.content.strip() or (ctx.guild.get_role(1387624066801733643) in message.author.roles:
+    if message.author.bot or not message.content.strip() or (ctx.guild.get_role(1387624066801733643) in message.author.roles):
         return
 
     channel_id = message.channel.id
@@ -1170,7 +1170,7 @@ async def on_message_edit(message_before, message_after):
 
 @bot.event
 async def on_message_delete(message):
-    if message.author == bot.user:
+    if message.author == bot.user or (ctx.guild.get_role(1387624066801733643) in message.author.roles):
         return
 
     if message.guild.id in list(LOGGING_CHANNELS.keys()):
