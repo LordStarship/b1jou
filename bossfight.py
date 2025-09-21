@@ -1,7 +1,3 @@
-# NOTE: This file will try to import safe_load_data / safe_save_data /
-# _lock_channel / normalize_text from b1jou. If not present, simple fallbacks
-# are used (but you should prefer the ones in b1jou so file locking & storage stays consistent).
-
 import discord
 from discord.ext import commands
 import asyncio
@@ -11,14 +7,9 @@ import json
 import pathlib
 from datetime import datetime
 
-# ---------------------------
-# Attempt to reuse helpers from b1jou.py (your main)
-# If those functions are not exported, fall back to local implementations.
-# ---------------------------
 try:
     from b1jou import safe_load_data, safe_save_data, _lock_channel, normalize_text
 except Exception:
-    # Fallbacks (rudimentary) - replace with your b1jou versions if available
     FILE_LOCK = asyncio.Lock()
     TRIVIA_DATA_FILE = "trivia_data.json"
 
@@ -47,7 +38,7 @@ except Exception:
         return unicodedata.normalize("NFKC", txt).replace("’", "'").lower().strip()
 
 # ---------------------------
-# Config (tweak as needed)
+# Config 
 # ---------------------------
 BOSS_START_HP = 10000
 PLAYER_START_HP = 100
@@ -62,7 +53,6 @@ TYPING_ROUNDS = 30
 # Storage key for points
 POINTS_KEY = "boss_points"   # structure: { "user_id": points }
 
-# Placeholder custom questions & words (you said you'll provide later)
 PLACEHOLDER_SPEEDRUN = [
     {"q": "What color is the sky on a clear day?", "answers": ["blue"]},
     {"q": "2 + 2 = ?", "answers": ["4", "four"]},
